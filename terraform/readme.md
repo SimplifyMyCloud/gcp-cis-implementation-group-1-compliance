@@ -1,8 +1,23 @@
-# Terraform
+# Terraform — CIS IG1 audit service account
 
-Provisions the read-only service account that runs the CIS IG1 audit.
+Provisions the read-only service account that a CIS IG1 compliance audit runs as.
 
-Full detail is in [`audit-service-account/readme.md`](audit-service-account/readme.md) — what every permission grants, how impersonation works, and what gets logged. This page is just the run instructions.
+**This creates the identity only.** It runs no compliance checks, reads no findings, and produces no report — that tooling is separate and comes later. What you are reviewing here is a service account, a set of read-only role bindings, and the ability for named people to impersonate it.
+
+Everything needed is in this directory. Nothing outside it is required to review, apply, verify, or destroy.
+
+| | |
+|---|---|
+| **This page** | How to create it, verify it, and remove it |
+| [`audit-service-account/readme.md`](audit-service-account/readme.md) | Every permission granted and what it allows · how impersonation works · what is logged |
+
+## What to do
+
+1. Read [what is granted](audit-service-account/readme.md#exactly-what-is-granted) — 35 roles, every one read-only
+2. Run `terraform plan` and check the output matches
+3. `terraform apply`
+4. Verify in the Console using the checklist below
+5. `terraform destroy` and verify again
 
 ---
 
@@ -22,7 +37,7 @@ Edit `terraform.tfvars`:
 ```hcl
 organization_id = "123456789012"
 host_project_id = "your-audit-project"
-auditor_principals = ["user:you@yourdomain.com"]
+auditor_principals = ["user:you@example.com"]
 
 enable_securitycenter = false   # true only where SCC is licensed
 enable_billing_viewer = true    # true if the billing account is inside this org

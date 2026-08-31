@@ -1,15 +1,10 @@
 # CIS Controls v8.1 IG1 — GCP Remediation Reference
 
-**Companion to `cis-ig1-gcp-checklist.md`.** When a checklist item comes up **Not Compliant**, look up the safeguard ID here.
+**Companion to [`cis-ig1-gcp-checklist.md`](cis-ig1-gcp-checklist.md).** When a checklist item fails, look up the safeguard ID here for example Terraform to fix it.
 
-Each entry gives:
+Commands to *find* what is broken live in [`cis-ig1-cli-validation.md`](cis-ig1-cli-validation.md), indexed by V-number and linked from every checklist requirement. This document is the fix, not the check.
 
-- **Check** — how to confirm the finding
-- **Fix** — example Terraform you can lift into your own repo
-
-**Validation commands live in [`cis-ig1-cli-validation.md`](cis-ig1-cli-validation.md).** That document is the canonical home for every read-only `gcloud` command, indexed by V-number and cross-linked from each checklist requirement. The **Check** entries below reference those V-numbers rather than repeating the commands, so there is one place to maintain when a command changes.
-
-The Terraform is illustrative. It is not applied from this repository and it is not a drop-in module — read it, adapt the names and scopes to your estate, and apply it through your own review process.
+The Terraform is illustrative — read it, adapt names and scopes, apply through your own review process.
 
 ---
 
@@ -137,12 +132,7 @@ gcloud org-policies describe CONSTRAINT --organization=ORGANIZATION_ID --effecti
 
 ## 1.1 — Enterprise asset inventory
 
-**Check**
-
-```
-gcloud asset feeds list --organization=ORGANIZATION_ID
-gcloud projects list --format="table(projectId,lifecycleState,createTime)"
-```
+**Check:** [V1](cis-ig1-cli-validation.md#v1), [V2](cis-ig1-cli-validation.md#v2), [V3](cis-ig1-cli-validation.md#v3), [V4](cis-ig1-cli-validation.md#v4), [V5](cis-ig1-cli-validation.md#v5), [V6](cis-ig1-cli-validation.md#v6)
 
 **Fix**
 
@@ -200,13 +190,7 @@ resource "google_tags_tag_key" "owner" {
 
 ## 1.2 — Address unauthorized assets
 
-**Check**
-
-```
-gcloud projects list --filter="lifecycleState:DELETE_REQUESTED"
-gcloud compute disks list --filter="-users:*" --format="table(name,zone,sizeGb)"
-gcloud compute addresses list --filter="status:RESERVED" --format="table(name,region)"
-```
+**Check:** [V7](cis-ig1-cli-validation.md#v7), [V8](cis-ig1-cli-validation.md#v8)
 
 **Fix**
 
@@ -234,12 +218,7 @@ Pair with a documented disposition process: unattributable resources get an owne
 
 ## 2.1 — Software inventory
 
-**Check**
-
-```
-gcloud compute instances os-inventory list-instances
-gcloud container clusters list --format="table(name,currentMasterVersion,currentNodeVersion)"
-```
+**Check:** [V9](cis-ig1-cli-validation.md#v9), [V10](cis-ig1-cli-validation.md#v10), [V11](cis-ig1-cli-validation.md#v11), [V12](cis-ig1-cli-validation.md#v12), [V13](cis-ig1-cli-validation.md#v13), [V14](cis-ig1-cli-validation.md#v14)
 
 **Fix**
 
@@ -262,13 +241,7 @@ resource "google_compute_project_metadata_item" "os_config" {
 
 ## 2.2 — Supported software
 
-**Check**
-
-```
-gcloud compute images list --filter="deprecated.state:DEPRECATED" --show-deprecated
-gcloud container clusters list --format="value(name,currentMasterVersion)"
-gcloud sql instances list --format="table(name,databaseVersion)"
-```
+**Check:** [V15](cis-ig1-cli-validation.md#v15), [V16](cis-ig1-cli-validation.md#v16), [V17](cis-ig1-cli-validation.md#v17), [V18](cis-ig1-cli-validation.md#v18), [V19](cis-ig1-cli-validation.md#v19)
 
 **Fix**
 
@@ -303,12 +276,7 @@ resource "google_sql_database_instance" "main" {
 
 ## 2.3 — Address unauthorized software
 
-**Check**
-
-```
-gcloud container binauthz policy export
-gcloud artifacts repositories list
-```
+**Check:** [V20](cis-ig1-cli-validation.md#v20), [V21](cis-ig1-cli-validation.md#v21), [V22](cis-ig1-cli-validation.md#v22)
 
 **Fix**
 
@@ -349,11 +317,7 @@ resource "google_container_analysis_note" "build" {
 }
 ```
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 Binary Authorization evaluates images at **admission**. Pods already running when the policy is applied are not re-evaluated and keep running.
 
@@ -374,12 +338,7 @@ Roll affected workloads after applying the policy, or they will run unattested u
 
 ## 3.2 — Data inventory
 
-**Check**
-
-```
-gcloud scc settings services describe --organization=ORGANIZATION_ID \
-  --service=SENSITIVE_DATA_PROTECTION
-```
+**Check:** [V24](cis-ig1-cli-validation.md#v24), [V25](cis-ig1-cli-validation.md#v25), [V26](cis-ig1-cli-validation.md#v26)
 
 **Fix**
 
@@ -414,18 +373,7 @@ resource "google_data_loss_prevention_discovery_config" "org_discovery" {
 
 The highest-value finding in the whole checklist. Public buckets are the single most common serious cloud misconfiguration.
 
-**Check**
-
-```
-# Any bucket readable by the internet
-for b in $(gcloud storage buckets list --format="value(name)"); do
-  gcloud storage buckets get-iam-policy gs://$b --format=json \
-    | grep -q 'allUsers\|allAuthenticatedUsers' && echo "PUBLIC: $b"
-done
-
-gcloud org-policies describe storage.publicAccessPrevention \
-  --organization=ORGANIZATION_ID --effective
-```
+**Check:** [V27](cis-ig1-cli-validation.md#v27), [V28](cis-ig1-cli-validation.md#v28), [V29](cis-ig1-cli-validation.md#v29), [V30](cis-ig1-cli-validation.md#v30), [V31](cis-ig1-cli-validation.md#v31), [V32](cis-ig1-cli-validation.md#v32), [V33](cis-ig1-cli-validation.md#v33), [V34](cis-ig1-cli-validation.md#v34) +2 more
 
 **Fix**
 
@@ -480,11 +428,7 @@ gcloud storage buckets remove-iam-policy-binding gs://BUCKET \
   --member=allUsers --role=roles/storage.objectViewer
 ```
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find every publicly readable bucket and dataset in the organization**
 
@@ -519,25 +463,11 @@ gcloud asset search-all-iam-policies \
            | "\($r)\t\(.)"' | sort -u
 ```
 
-**Remediate**
-
-```
-gcloud storage buckets remove-iam-policy-binding gs://BUCKET \
-  --member=allUsers --role=roles/storage.objectViewer
-
-gcloud storage buckets update gs://BUCKET --uniform-bucket-level-access
-```
-
 ---
 
 ## 3.4 — Enforce data retention
 
-**Check**
-
-```
-gcloud storage buckets describe gs://BUCKET --format="value(lifecycle)"
-bq show --format=prettyjson PROJECT:DATASET | grep -i expiration
-```
+**Check:** [V37](cis-ig1-cli-validation.md#v37), [V38](cis-ig1-cli-validation.md#v38), [V39](cis-ig1-cli-validation.md#v39), [V40](cis-ig1-cli-validation.md#v40), [V41](cis-ig1-cli-validation.md#v41)
 
 **Fix**
 
@@ -571,12 +501,7 @@ resource "google_bigquery_dataset" "retained" {
 
 ## 4.2 — Secure network configuration
 
-**Check**
-
-```
-gcloud compute networks list --format="table(name,x_gcloud_subnet_mode)"
-gcloud compute firewall-rules list --filter="name~default-allow"
-```
+**Check:** [V46](cis-ig1-cli-validation.md#v46), [V47](cis-ig1-cli-validation.md#v47), [V48](cis-ig1-cli-validation.md#v48), [V49](cis-ig1-cli-validation.md#v49), [V50](cis-ig1-cli-validation.md#v50), [V51](cis-ig1-cli-validation.md#v51), [V52](cis-ig1-cli-validation.md#v52), [V53](cis-ig1-cli-validation.md#v53)
 
 **Fix**
 
@@ -616,11 +541,7 @@ resource "google_compute_subnetwork" "private" {
 gcloud compute networks delete default --project=PROJECT_ID
 ```
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find every default network still present**
 
@@ -650,12 +571,6 @@ gcloud projects list --format="value(projectId)" | while read p; do
     --format="value(name,x_gcloud_subnet_mode)" 2>/dev/null \
     | grep -E "LEGACY|AUTO" | sed "s|^|$p / |"
 done
-```
-
-**Remediate**
-
-```
-gcloud compute networks delete default --project=PROJECT_ID
 ```
 
 Delete the firewall rules first if the network delete is refused.
@@ -690,15 +605,7 @@ resource "google_iap_settings" "web" {
 
 ## 4.4 — Firewall on servers
 
-**Check**
-
-```
-gcloud compute firewall-rules list \
-  --filter="sourceRanges:0.0.0.0/0 AND allowed.ports:(22 3389 3306 5432 1433)" \
-  --format="table(name,network,sourceRanges.list(),allowed[].map().firewall_rule().list())"
-
-gcloud sql instances list --format="table(name,settings.ipConfiguration.ipv4Enabled)"
-```
+**Check:** [V55](cis-ig1-cli-validation.md#v55), [V56](cis-ig1-cli-validation.md#v56), [V57](cis-ig1-cli-validation.md#v57), [V58](cis-ig1-cli-validation.md#v58), [V59](cis-ig1-cli-validation.md#v59), [V60](cis-ig1-cli-validation.md#v60), [V61](cis-ig1-cli-validation.md#v61), [V62](cis-ig1-cli-validation.md#v62) +2 more
 
 **Fix**
 
@@ -744,11 +651,7 @@ resource "google_compute_firewall" "deny_all_ingress" {
 }
 ```
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find every Cloud SQL instance with a public IP**
 
@@ -789,15 +692,7 @@ gcloud asset search-all-resources \
 
 ## 4.6 — Securely manage assets
 
-**Check**
-
-```
-for c in compute.requireOsLogin compute.disableSerialPortAccess \
-         compute.requireShieldedVm compute.vmExternalIpAccess compute.vmCanIpForward; do
-  echo "== $c"
-  gcloud org-policies describe $c --organization=ORGANIZATION_ID --effective 2>&1 | head -5
-done
-```
+**Check:** [V65](cis-ig1-cli-validation.md#v65), [V66](cis-ig1-cli-validation.md#v66), [V67](cis-ig1-cli-validation.md#v67), [V68](cis-ig1-cli-validation.md#v68), [V69](cis-ig1-cli-validation.md#v69), [V70](cis-ig1-cli-validation.md#v70), [V71](cis-ig1-cli-validation.md#v71), [V72](cis-ig1-cli-validation.md#v72) +4 more
 
 **Fix**
 
@@ -883,11 +778,7 @@ resource "google_container_cluster" "hardened" {
 }
 ```
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find VMs without OS Login enabled**
 
@@ -949,14 +840,7 @@ done
 
 ## 4.7 — Manage default accounts
 
-**Check**
-
-```
-gcloud projects get-iam-policy PROJECT_ID \
-  --flatten="bindings[].members" \
-  --filter="bindings.members~compute@developer.gserviceaccount.com" \
-  --format="value(bindings.role)"
-```
+**Check:** [V77](cis-ig1-cli-validation.md#v77), [V78](cis-ig1-cli-validation.md#v78), [V79](cis-ig1-cli-validation.md#v79), [V80](cis-ig1-cli-validation.md#v80), [V81](cis-ig1-cli-validation.md#v81), [V82](cis-ig1-cli-validation.md#v82), [V83](cis-ig1-cli-validation.md#v83), [V84](cis-ig1-cli-validation.md#v84) +1 more
 
 If that returns `roles/editor`, the default service account is over-privileged.
 
@@ -988,11 +872,7 @@ resource "google_project_iam_member" "workload" {
 
 **Also required:** strip `roles/editor` from default service accounts in existing projects. The constraint prevents the grant at creation; it does not remove grants already made.
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find every project where the default service account still holds Editor**
 
@@ -1030,13 +910,7 @@ gcloud projects remove-iam-policy-binding PROJECT_ID \
 
 ## 5.1 — Account inventory
 
-**Check**
-
-```
-gcloud organizations get-iam-policy ORGANIZATION_ID --format=json
-gcloud iam service-accounts list --project=PROJECT_ID
-gcloud asset search-all-iam-policies --scope=organizations/ORGANIZATION_ID
-```
+**Check:** [V86](cis-ig1-cli-validation.md#v86), [V87](cis-ig1-cli-validation.md#v87), [V88](cis-ig1-cli-validation.md#v88), [V89](cis-ig1-cli-validation.md#v89)
 
 **Fix**
 
@@ -1064,14 +938,7 @@ resource "google_pubsub_topic" "iam_changes" {
 
 ## 5.2 — Eliminate static credentials
 
-**Check**
-
-```
-# Any user-managed key is a finding
-gcloud iam service-accounts keys list \
-  --iam-account=SA_EMAIL --managed-by=user \
-  --format="table(name,validAfterTime)"
-```
+**Check:** [V90](cis-ig1-cli-validation.md#v90), [V91](cis-ig1-cli-validation.md#v91), [V92](cis-ig1-cli-validation.md#v92), [V93](cis-ig1-cli-validation.md#v93), [V94](cis-ig1-cli-validation.md#v94), [V95](cis-ig1-cli-validation.md#v95)
 
 **Fix**
 
@@ -1117,11 +984,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 
 **Also required:** inventory and delete existing keys. Blocking creation leaves every already-exported key valid indefinitely — that is the actual exposure.
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **This is the important one.** Blocking key creation leaves every already-exported key valid indefinitely. The keys sitting in CI systems and on laptops are the actual exposure, and the constraint does nothing about them.
 
@@ -1157,16 +1020,7 @@ gcloud iam service-accounts keys delete KEY_ID --iam-account=SA_EMAIL
 
 ## 5.3 — Dormant accounts
 
-**Check**
-
-```
-gcloud iam service-accounts list --project=PROJECT_ID --format="value(email)" \
-  | while read sa; do
-      echo "$sa: $(gcloud logging read \
-        "protoPayload.authenticationInfo.principalEmail=$sa" \
-        --limit=1 --freshness=90d --format='value(timestamp)')"
-    done
-```
+**Check:** [V96](cis-ig1-cli-validation.md#v96), [V97](cis-ig1-cli-validation.md#v97), [V98](cis-ig1-cli-validation.md#v98)
 
 Empty timestamp means no authentication in 90 days.
 
@@ -1188,14 +1042,7 @@ resource "google_service_account" "legacy" {
 
 ## 5.4 — Restrict admin privileges
 
-**Check**
-
-```
-gcloud organizations get-iam-policy ORGANIZATION_ID \
-  --flatten="bindings[].members" \
-  --filter="bindings.role:(roles/owner OR roles/editor) AND bindings.members~^user:" \
-  --format="table(bindings.role,bindings.members)"
-```
+**Check:** [V99](cis-ig1-cli-validation.md#v99), [V100](cis-ig1-cli-validation.md#v100), [V101](cis-ig1-cli-validation.md#v101), [V102](cis-ig1-cli-validation.md#v102), [V103](cis-ig1-cli-validation.md#v103), [V104](cis-ig1-cli-validation.md#v104)
 
 Any individual user with Owner or Editor at org level is a finding.
 
@@ -1236,11 +1083,7 @@ resource "google_organization_iam_custom_role" "auditor" {
 }
 ```
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find every basic-role grant to an individual user across the organization**
 
@@ -1270,11 +1113,7 @@ gcloud recommender recommendations list \
 
 ## 6.3 — MFA for externally exposed apps
 
-**Check**
-
-```
-gcloud iap web get-iam-policy --resource-type=backend-services --service=SERVICE
-```
+**Check:** [V106](cis-ig1-cli-validation.md#v106), [V107](cis-ig1-cli-validation.md#v107), [V108](cis-ig1-cli-validation.md#v108)
 
 **Fix**
 
@@ -1304,12 +1143,7 @@ resource "google_iap_web_backend_service_iam_member" "access" {
 
 ## 6.4 — MFA for remote access
 
-**Check**
-
-```
-gcloud compute instances list --format="table(name,networkInterfaces[0].accessConfigs[0].natIP)"
-gcloud compute firewall-rules list --filter="allowed.ports:22 AND sourceRanges:0.0.0.0/0"
-```
+**Check:** [V109](cis-ig1-cli-validation.md#v109), [V110](cis-ig1-cli-validation.md#v110), [V111](cis-ig1-cli-validation.md#v111), [V112](cis-ig1-cli-validation.md#v112)
 
 **Fix**
 
@@ -1375,12 +1209,7 @@ Not manageable in Terraform — 2SV enforcement is a Cloud Identity / Workspace 
 
 ## 7.3 — OS patch management
 
-**Check**
-
-```
-gcloud compute os-config patch-deployments list
-gcloud compute os-config patch-jobs list --limit=5
-```
+**Check:** [V116](cis-ig1-cli-validation.md#v116), [V117](cis-ig1-cli-validation.md#v117), [V118](cis-ig1-cli-validation.md#v118), [V119](cis-ig1-cli-validation.md#v119), [V120](cis-ig1-cli-validation.md#v120), [V121](cis-ig1-cli-validation.md#v121)
 
 **Fix**
 
@@ -1441,13 +1270,7 @@ resource "google_compute_instance_group_manager" "app" {
 
 ## 7.4 — Application patch management
 
-**Check**
-
-```
-gcloud artifacts docker images list REPO --include-tags --format=json \
-  | jq '.[].package'
-gcloud artifacts docker images describe IMAGE --show-package-vulnerability
-```
+**Check:** [V122](cis-ig1-cli-validation.md#v122), [V123](cis-ig1-cli-validation.md#v123), [V124](cis-ig1-cli-validation.md#v124)
 
 **Fix**
 
@@ -1483,12 +1306,7 @@ resource "google_scc_notification_config" "vulns" {
 
 The most common material gap. Data Access logs are **off by default** for almost every service.
 
-**Check**
-
-```
-gcloud organizations get-iam-policy ORGANIZATION_ID --format=json | jq '.auditConfigs'
-gcloud logging sinks list --organization=ORGANIZATION_ID
-```
+**Check:** [V126](cis-ig1-cli-validation.md#v126), [V127](cis-ig1-cli-validation.md#v127), [V128](cis-ig1-cli-validation.md#v128), [V129](cis-ig1-cli-validation.md#v129), [V130](cis-ig1-cli-validation.md#v130), [V131](cis-ig1-cli-validation.md#v131), [V132](cis-ig1-cli-validation.md#v132), [V133](cis-ig1-cli-validation.md#v133) +3 more
 
 Empty `auditConfigs` means you are collecting admin activity only.
 
@@ -1547,11 +1365,7 @@ resource "google_logging_metric" "org_policy_change" {
 
 **Cost warning:** enabling `DATA_READ` on `allServices` can be expensive on a high-traffic estate. Scope to services holding sensitive data if volume is a problem — but record the scoping decision, because an auditor will ask.
 
-> ### ⚠️ NOT RETROACTIVE
->
-> Enabling Data Access logs starts the record **from that moment**. It does not recover anything that happened before. There is no command that finds the missing history, because it was never written.
->
-> Enable this first, before the rest of the programme — every day it stays off is a day you can never investigate.
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find projects and services where Data Access logging is still off**
 
@@ -1578,13 +1392,7 @@ A sink whose `writerIdentity` lacks write permission on its destination reports 
 
 ## 8.3 — Audit log storage
 
-**Check**
-
-```
-gcloud logging buckets describe _Default --location=global \
-  --organization=ORGANIZATION_ID --format="value(retentionDays)"
-gcloud storage buckets describe gs://AUDIT_BUCKET --format="value(retentionPolicy)"
-```
+**Check:** [V137](cis-ig1-cli-validation.md#v137), [V138](cis-ig1-cli-validation.md#v138), [V139](cis-ig1-cli-validation.md#v139), [V140](cis-ig1-cli-validation.md#v140), [V141](cis-ig1-cli-validation.md#v141)
 
 `30` is the untouched default.
 
@@ -1629,12 +1437,7 @@ resource "google_logging_organization_bucket_config" "default" {
 
 ## 9.2 — DNS filtering
 
-**Check**
-
-```
-gcloud dns response-policies list
-gcloud compute routers nats list --router=ROUTER --region=REGION
-```
+**Check:** [V142](cis-ig1-cli-validation.md#v142), [V143](cis-ig1-cli-validation.md#v143), [V144](cis-ig1-cli-validation.md#v144), [V145](cis-ig1-cli-validation.md#v145), [V146](cis-ig1-cli-validation.md#v146)
 
 **Fix**
 
@@ -1685,12 +1488,7 @@ resource "google_compute_router_nat" "nat" {
 
 ## 10.1 — Anti-malware
 
-**Check**
-
-```
-gcloud compute os-config inventories describe INSTANCE --zone=ZONE \
-  --format=json | jq '.items.installedPackages[] | select(.name | test("clamav|falcon|defender"))'
-```
+**Check:** [V147](cis-ig1-cli-validation.md#v147), [V148](cis-ig1-cli-validation.md#v148), [V149](cis-ig1-cli-validation.md#v149), [V150](cis-ig1-cli-validation.md#v150)
 
 **Fix**
 
@@ -1753,12 +1551,7 @@ resource "google_compute_instance" "shielded" {
 
 ## 10.2 — Signature updates
 
-**Check**
-
-```
-gcloud compute ssh INSTANCE --tunnel-through-iap \
-  --command="systemctl is-active clamav-freshclam && freshclam --version"
-```
+**Check:** [V151](cis-ig1-cli-validation.md#v151)
 
 **Fix**
 
@@ -1785,13 +1578,7 @@ resource "google_compute_firewall" "allow_signature_updates" {
 
 ## 11.2 — Automated backups
 
-**Check**
-
-```
-gcloud sql instances describe INSTANCE \
-  --format="value(settings.backupConfiguration.enabled,settings.backupConfiguration.pointInTimeRecoveryEnabled)"
-gcloud compute resource-policies list --filter="snapshotSchedulePolicy:*"
-```
+**Check:** [V153](cis-ig1-cli-validation.md#v153), [V154](cis-ig1-cli-validation.md#v154), [V155](cis-ig1-cli-validation.md#v155), [V156](cis-ig1-cli-validation.md#v156), [V157](cis-ig1-cli-validation.md#v157), [V158](cis-ig1-cli-validation.md#v158)
 
 **Fix**
 
@@ -1848,12 +1635,7 @@ resource "google_compute_disk_resource_policy_attachment" "data" {
 
 ## 11.3 — Protect recovery data
 
-**Check**
-
-```
-gcloud storage buckets describe gs://BACKUP_BUCKET \
-  --format="value(retentionPolicy.isLocked,encryption.defaultKmsKeyName)"
-```
+**Check:** [V159](cis-ig1-cli-validation.md#v159), [V160](cis-ig1-cli-validation.md#v160), [V161](cis-ig1-cli-validation.md#v161), [V162](cis-ig1-cli-validation.md#v162), [V163](cis-ig1-cli-validation.md#v163), [V164](cis-ig1-cli-validation.md#v164)
 
 **Fix**
 
@@ -1904,13 +1686,7 @@ resource "google_storage_bucket" "backups" {
 
 The safeguard most often failed by organizations that believe they pass it. A second copy reachable with the same credentials as production is not isolation.
 
-**Check**
-
-```
-gcloud storage buckets list --project=BACKUP_PROJECT
-gcloud projects get-iam-policy BACKUP_PROJECT --format=json \
-  | jq '.bindings[] | select(.members[] | contains("prod"))'
-```
+**Check:** [V165](cis-ig1-cli-validation.md#v165), [V166](cis-ig1-cli-validation.md#v166), [V167](cis-ig1-cli-validation.md#v167), [V168](cis-ig1-cli-validation.md#v168)
 
 Any production identity appearing in the backup project's IAM policy is a finding.
 
@@ -1963,13 +1739,7 @@ resource "google_storage_bucket" "backups_dr" {
 
 ## 12.1 — Network infrastructure currency
 
-**Check**
-
-```
-gcloud compute ssl-policies list --format="table(name,minTlsVersion,profile)"
-gcloud compute vpn-gateways list
-gcloud compute networks list --format="table(name,x_gcloud_subnet_mode)"
-```
+**Check:** [V169](cis-ig1-cli-validation.md#v169), [V170](cis-ig1-cli-validation.md#v170), [V171](cis-ig1-cli-validation.md#v171), [V172](cis-ig1-cli-validation.md#v172), [V173](cis-ig1-cli-validation.md#v173), [V174](cis-ig1-cli-validation.md#v174)
 
 `LEGACY` subnet mode or a missing SSL policy are both findings.
 
@@ -2015,15 +1785,7 @@ resource "google_compute_security_policy" "armor" {
 
 ## 15.1 — Service provider inventory
 
-**Check**
-
-```
-gcloud asset search-all-iam-policies \
-  --scope=organizations/ORGANIZATION_ID \
-  --query="policy:(-domain:YOURDOMAIN.com)" \
-  --format="table(resource,policy.bindings.members)"
-gcloud iam workload-identity-pools list --location=global --project=PROJECT_ID
-```
+**Check:** [V175](cis-ig1-cli-validation.md#v175), [V176](cis-ig1-cli-validation.md#v176), [V177](cis-ig1-cli-validation.md#v177), [V178](cis-ig1-cli-validation.md#v178), [V179](cis-ig1-cli-validation.md#v179)
 
 **Fix**
 
@@ -2043,11 +1805,7 @@ resource "google_org_policy_policy" "allowed_domains" {
 
 **Also required:** the inventory itself is a document, not a resource. Record each provider, what data it touches, and its review date. The constraint prevents new undocumented grants; it does not enumerate existing ones.
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 **Find existing external grants the constraint will not remove**
 
@@ -2074,11 +1832,7 @@ done
 
 ## 17.2 — Incident contact information
 
-**Check**
-
-```
-gcloud essential-contacts list --organization=ORGANIZATION_ID
-```
+**Check:** [V181](cis-ig1-cli-validation.md#v181), [V182](cis-ig1-cli-validation.md#v182), [V183](cis-ig1-cli-validation.md#v183), [V184](cis-ig1-cli-validation.md#v184), [V185](cis-ig1-cli-validation.md#v185)
 
 Empty output means Google's security notifications are going to whoever originally created the org.
 
@@ -2113,11 +1867,7 @@ resource "google_org_policy_policy" "contact_domains" {
 
 Use monitored group addresses, never individuals. Send a test message and confirm receipt — an address that bounces silently is the same as no address.
 
-> ### ⚠️ NOT RETROACTIVE
->
-> The constraint above blocks **future** non-conforming operations only. Everything already in the estate stays exactly as it is, and the console will show the policy as enforced while the violations sit there untouched.
->
-> **Applying the constraint is half the fix. Find and remediate what already exists.**
+> ⚠️ **Not retroactive** — the constraint blocks new violations only. Find and fix what already exists. [Why](#-read-this-first--organization-policy-is-not-retroactive)
 
 The domain constraint blocks **new** contacts outside your domain. Contacts already configured — including personal addresses and departed employees — stay in place.
 
@@ -2144,12 +1894,7 @@ gcloud alpha monitoring channels list --project=PROJECT_ID \
 
 ## 17.3 — Incident reporting
 
-**Check**
-
-```
-gcloud scc notifications list --organization=ORGANIZATION_ID
-gcloud alpha monitoring channels list --project=PROJECT_ID
-```
+**Check:** [V186](cis-ig1-cli-validation.md#v186), [V187](cis-ig1-cli-validation.md#v187), [V188](cis-ig1-cli-validation.md#v188)
 
 **Fix**
 

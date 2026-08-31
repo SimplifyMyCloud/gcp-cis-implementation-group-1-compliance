@@ -490,21 +490,6 @@ func substitute(cmd string, subs map[string]string) (string, []string, []string)
 		return match
 	})
 
-	// YOURDOMAIN.com appears inside regexes and is not UPPER_SNAKE-matched.
-	if strings.Contains(out, "YOURDOMAIN") {
-		if v, ok := subs["DOMAIN"]; ok {
-			out = strings.ReplaceAll(out, "YOURDOMAIN.com", v)
-			out = strings.ReplaceAll(out, "YOURDOMAIN\\\\.com", strings.ReplaceAll(v, ".", "\\\\."))
-			out = strings.ReplaceAll(out, "YOURDOMAIN", v)
-		} else if strings.EqualFold(subs["DOMAIN"], "none") {
-			if !seenAbsent["DOMAIN"] {
-				seenAbsent["DOMAIN"] = true
-				absent = append(absent, "DOMAIN")
-			}
-		} else if !seen["DOMAIN"] {
-			missing = append(missing, "DOMAIN")
-		}
-	}
 	sort.Strings(missing)
 	sort.Strings(absent)
 	return out, missing, absent

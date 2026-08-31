@@ -21,7 +21,11 @@ output "verify_command" {
 }
 
 output "audit_command" {
-  description = "Organization pass, once impersonating."
+  description = <<-EOT
+    For reference only — the command the audit tooling will run once
+    impersonating. That tooling is separate from this module and is not
+    required to create, verify, or destroy the service account.
+  EOT
   value       = "go run audit-run.go -scope=org -org=${var.organization_id} -pack ./audit-state/org"
 }
 

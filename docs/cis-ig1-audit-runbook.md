@@ -40,143 +40,61 @@ Both are changes to the organization. Both are recorded in `./audit-state/` as t
 
 ## Phase 1 — Prerequisites
 
-Everything this audit records, changes, or produces lives in one directory:
-
-```
-audit-state/
-  audit.env                     values the checks need
-  apis-before.txt               enabled APIs before we touched anything
-  apis-enabled-by-audit.txt     the diff — the only safe teardown list
-  roles-granted.txt             roles given to the audit identity
-  audit-member.txt              which identity ran it
-  projects.txt                  every project in the org
-  iam-inventory.txt             full IAM inventory (V86)
-  org/                          the organization pass results
-  projects/<project-id>/        one directory per project pass
-```
-
 ```bash
-mkdir -p ./audit-state
-
+mkdir -p ./audit-state          # everything this audit records lives here
 gcloud auth login
 export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
-export AUDIT_PROJECT=<project that will carry API quota>
+export AUDIT_PROJECT=<project carrying API quota>
 gcloud config set project $AUDIT_PROJECT
-
-which jq kubectl bq     # jq is required by ~45 checks and is not optional
+which jq                        # required by ~45 checks, not optional
 ```
 
-Enable the APIs deliberately. Each is a billable-service change on the organization, and the alternative is approving them at an interactive `y/N` prompt in the middle of the run:
+### Enable the APIs
 
-**Snapshot what is already enabled first.** At teardown you must disable only the APIs *you* turned on — disabling one that was already in use will break whatever depends on it.
+**Snapshot first** — at teardown you must disable only the APIs *you* turned on.
 
 ```bash
-mkdir -p ./audit-state
 gcloud services list --enabled --project="$AUDIT_PROJECT" \
   --format="value(config.name)" | sort > ./audit-state/apis-before.txt
 
 gcloud services enable \
-  cloudasset.googleapis.com \
-  essentialcontacts.googleapis.com \
-  accesscontextmanager.googleapis.com \
-  recommender.googleapis.com \
-  policyanalyzer.googleapis.com \
-  osconfig.googleapis.com \
+  cloudasset.googleapis.com essentialcontacts.googleapis.com \
+  accesscontextmanager.googleapis.com recommender.googleapis.com \
+  policyanalyzer.googleapis.com osconfig.googleapis.com \
   --project=$AUDIT_PROJECT
 
 gcloud services list --enabled --project="$AUDIT_PROJECT" \
   --format="value(config.name)" | sort > ./audit-state/apis-after.txt
 
-# Exactly what this audit turned on — the teardown list
 comm -13 ./audit-state/apis-before.txt ./audit-state/apis-after.txt \
   | tee ./audit-state/apis-enabled-by-audit.txt
 ```
 
-Add `securitycenter.googleapis.com` only where SCC is licensed.
-
 ### Create the audit service account
 
-**The audit runs as a dedicated service account you impersonate, not as your own user.** Three reasons, and the first is the one that bites:
-
-**Revoking is clean.** Your user account probably already holds some of these roles, or inherits them from a group. Revoking unconditionally at teardown would strip bindings you had before the audit and legitimately need. A service account starts from nothing, so revoke-everything is exactly right.
-
-**Attribution.** Every check writes audit log entries. Run as your user and they are indistinguishable from your normal admin activity; run as the auditor and the entire audit is one filterable block in the log.
-
-**It is the honest answer to safeguard 5.4.** A human account holding standing organization-wide read is precisely the pattern this audit flags.
-
-#### Use the Terraform module
+The audit runs as a dedicated read-only service account you impersonate — never as your own user. Teardown can then revoke unconditionally without stripping bindings you already had, every action is attributable to one identity in the logs, and a human holding standing org-wide read is the pattern safeguard 5.4 flags.
 
 ```bash
-# Application Default Credentials — separate from `gcloud auth login`
-gcloud auth application-default login
-
 cd terraform/audit-service-account
-cp terraform.tfvars.example terraform.tfvars    # then edit
-terraform init
-terraform plan                                  # review with the customer
-terraform apply
-```
+gcloud auth application-default login    # ADC — separate from `gcloud auth login`
+cp terraform.tfvars.example terraform.tfvars   # then edit
+terraform init && terraform plan && terraform apply
 
-`terraform plan` is worth showing the customer before you apply — it is an exact, reviewable statement of what the audit will be able to read.
-
-Every permission is read-only. Where the only predefined role carried a write verb, the module substitutes a custom role with an explicit permission list — including replacing `roles/storage.admin`, which can delete buckets, with a three-permission reader. See the [module readme](../terraform/audit-service-account/readme.md).
-
-Then switch to the audit identity:
-
-```bash
 eval "$(terraform output -raw impersonate_command)"
 gcloud config get-value auth/impersonate_service_account
 ```
 
-That must print the service account. Note `gcloud auth list` will still show *your* address — impersonation layers on top of your credential rather than replacing it, which is why audit logs record both identities.
+That must print the auditor service account. `gcloud auth list` will still show *your* address — impersonation layers a token over your credential rather than switching accounts, which is why audit logs record both identities.
 
-> **Enable the APIs before switching**, or as your own user — a brand-new service account has no rights yet, including the right to enable services. To step back briefly:
-> ```bash
-> gcloud config unset auth/impersonate_service_account
-> ```
+Every permission is read-only, including custom roles replacing predefined ones that carry write verbs. Full detail: [`terraform/readme.md`](../terraform/readme.md).
 
-Impersonation propagates within a minute or so. If Phase 3 reports `PERMISSION_DENIED` immediately, wait and retry before assuming a grant failed.
-
-### Record what was granted, for teardown
-
-```bash
-mkdir -p ./audit-state
-printf '%s\n' browser orgpolicy.policyViewer cloudasset.viewer iam.securityReviewer \
-  iam.serviceAccountViewer logging.viewer logging.privateLogViewer \
-  essentialcontacts.viewer compute.viewer container.viewer cloudsql.viewer \
-  storage.admin monitoring.viewer osconfig.inventoryViewer recommender.iamViewer \
-  secretmanager.viewer artifactregistry.reader binaryauthorization.policyViewer \
-  dns.reader cloudkms.viewer accesscontextmanager.policyReader \
-  securitycenter.adminViewer > ./audit-state/roles-granted.txt
-
-echo "$AUDIT_MEMBER" > ./audit-state/audit-member.txt
-```
-
-### Confirm the grants landed
-
-```bash
-gcloud organizations get-iam-policy "$ORG_ID" \
-  --flatten="bindings[].members" \
-  --filter="bindings.members:${AUDIT_MEMBER#*:}" \
-  --format="value(bindings.role)" | sort
-```
-
-Expect 22 or 23 roles. IAM propagation can take a minute or two — if Phase 3 reports `DENIED`, wait and rerun before assuming a grant failed.
-
-> **The audit identity is itself a sensitive asset.** These roles let one principal enumerate every public bucket, over-permissioned account, and open firewall rule in the organization. That is why it is impersonated rather than keyed, and deleted when the audit ends.
->
-> These bindings are torn down in [Phase 11](#phase-11--tear-down-the-audit-access). Do not skip it.
+**Enable the APIs before switching**, or as yourself — a new service account cannot enable services.
 
 - [ ] `ORG_ID` and `AUDIT_PROJECT` exported
 - [ ] `jq` present
-- [ ] `./audit-state/apis-enabled-by-audit.txt` written
-- [ ] APIs enabled
-- [ ] `cis-auditor` service account created
-- [ ] Impersonation active — `gcloud auth list` shows the service account
-- [ ] No service account key created (impersonation only)
-- [ ] Audit roles granted at **organization** scope
-- [ ] Custom key-reader role created and bound
-- [ ] Grants confirmed with `get-iam-policy`
+- [ ] `apis-enabled-by-audit.txt` written
+- [ ] Service account created and impersonation active
+- [ ] No service account key created
 
 ---
 
@@ -410,27 +328,24 @@ go run compliance-report.go --update     # sync Status lines to the checkboxes
 
 ## Phase 11 — Tear down the audit access
 
-**Do this as soon as the run is finished.** The audit identity holds 22 org-level roles including `storage.admin` and `logging.privateLogViewer`. Left in place it is a standing privileged account with no business owner — which fails safeguards **5.1** (account inventory), **5.4** (restrict administrator privileges) and **6.2** (access revoking process), the very controls this audit just measured.
-
-### Stop impersonating first
-
-**Order matters.** The service account does not hold `resourcemanager.organizations.setIamPolicy`, so it cannot revoke its own bindings. Revoke while still impersonating and every command fails.
+**Do this as soon as the run finishes.** The audit identity holds org-wide read; left in place it fails safeguards 5.1, 5.4 and 6.2 — controls this audit just measured.
 
 ```bash
-gcloud config unset auth/impersonate_service_account
+gcloud config unset auth/impersonate_service_account   # FIRST — the SA cannot delete itself
 
-# Confirm you are back to your own account
-gcloud config get-value auth/impersonate_service_account
-```
-
-### Destroy the audit identity
-
-```bash
 cd terraform/audit-service-account
 terraform destroy
 ```
 
-State records exactly what was created, so this removes exactly that — the service account, every organization binding, the three custom roles, and the impersonation grants. Nothing to reconcile by hand.
+Then disable only the APIs this audit enabled:
+
+```bash
+while read -r API; do
+  gcloud services disable "$API" --project="$AUDIT_PROJECT" --force --quiet
+done < ./audit-state/apis-enabled-by-audit.txt
+```
+
+Never disable from the full Phase 1 list — some were already on and in use.
 
 Verify:
 
@@ -439,66 +354,13 @@ eval "$(terraform output -raw teardown_verification)"
 gcloud iam roles list --organization="$ORG_ID" --filter="name~cisIg1Audit"
 ```
 
-Both empty means no trace remains.
+Both empty means no trace remains. Console checks: [`terraform/readme.md`](../terraform/readme.md#verify-by-hand-in-the-console).
 
-If the audit was provisioned with `gcloud` rather than Terraform, use the revoke loop against `./audit-state/roles-granted.txt` instead, then delete the service account and the custom roles by hand.
-
-### Disable only the APIs this audit enabled
-
-```bash
-if [ -s ./audit-state/apis-enabled-by-audit.txt ]; then
-  while read -r API; do
-    echo "  disabling $API"
-    gcloud services disable "$API" --project="$AUDIT_PROJECT" --force --quiet
-  done < ./audit-state/apis-enabled-by-audit.txt
-else
-  echo "  no APIs were enabled by this audit — nothing to disable"
-fi
-```
-
-Never disable from the full list in Phase 1 — some were likely already on and in use. `apis-enabled-by-audit.txt` is the difference between the two snapshots and is the only safe input here.
-
-### Delete the service account
-
-This removes the token-creator binding along with it:
-
-```bash
-gcloud iam service-accounts delete "$AUDIT_SA" --project="$AUDIT_PROJECT" --quiet
-```
-
-If `AUDIT_SA` is no longer set in this shell:
-
-```bash
-export AUDIT_SA=$(sed 's|^serviceAccount:||' ./audit-state/audit-member.txt)
-```
-
-### Verify nothing is left behind
-
-```bash
-# No org-level bindings for the audit identity
-gcloud organizations get-iam-policy "$ORG_ID" \
-  --flatten="bindings[].members" \
-  --filter="bindings.members:${AUDIT_MEMBER#*:}" \
-  --format="value(bindings.role)"
-
-# Service account gone
-gcloud iam service-accounts describe "$AUDIT_SA" --project="$AUDIT_PROJECT" 2>&1 | tail -1
-
-# Impersonation cleared
-gcloud config get-value auth/impersonate_service_account
-```
-
-Expected: nothing, `NOT_FOUND`, and an unset value.
-
-- [ ] Impersonation cleared **before** revoking
-- [ ] All 22 role bindings revoked
-- [ ] Custom key-reader role unbound and deleted
+- [ ] Impersonation cleared **before** destroy
+- [ ] `terraform destroy` clean
 - [ ] Only audit-enabled APIs disabled
-- [ ] Service account deleted
-- [ ] All three verification commands return the expected empty/NOT_FOUND
-- [ ] Teardown date recorded alongside the findings
-
-Keep `./audit-state/` with the findings. It is the record of what the audit changed and that it was reversed.
+- [ ] Both verification commands empty
+- [ ] Teardown date recorded with the findings
 
 ---
 

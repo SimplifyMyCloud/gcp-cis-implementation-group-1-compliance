@@ -2,7 +2,7 @@
 
 Terraform for the identity that runs the audit. Read-only by construction, impersonated rather than keyed, and removed completely by `terraform destroy`.
 
-Replaces the `gcloud` provisioning in Phase 1 and the revoke loop in Phase 11 of the [runbook](../../docs/cis-ig1-audit-runbook.md).
+Replaces the `gcloud` provisioning and revoke loop in phases 1 and 11 of the audit runbook (`docs/cis-ig1-audit-runbook.md` in the main repository).
 
 ## For the customer, in short
 
@@ -180,7 +180,7 @@ protoPayload.authenticationInfo.principalEmail
     cis-ig1-auditor@<host-project>.iam.gserviceaccount.com
 
 protoPayload.authenticationInfo.serviceAccountDelegationInfo[]
-    firstPartyPrincipal.principalEmail: alex@ourcompany.com
+    firstPartyPrincipal.principalEmail: alex@example.com
 ```
 
 Impersonation is not anonymising. Every action is attributable to a named person, and the audit trail shows the chain rather than an opaque service account.
@@ -226,6 +226,14 @@ Two things follow:
 ### After the engagement
 
 `terraform destroy` removes the identity and its permissions, but the log record remains for your configured retention period. The evidence of what the auditor did outlives the auditor's ability to do it.
+
+---
+
+## Scope of this directory
+
+This module creates the audit **identity** and nothing else. It does not run any compliance check, read any finding, or produce any report.
+
+The audit tooling itself lives in the main repository. Nothing here depends on it, and this directory can be reviewed and applied entirely on its own.
 
 ## Why three custom roles exist
 
