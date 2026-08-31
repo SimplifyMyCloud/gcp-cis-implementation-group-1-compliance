@@ -11,6 +11,7 @@ Built to be carried into an audit: tick the boxes, and when something fails, loo
 | Document | When you use it |
 |---|---|
 | [`docs/cis-ig1-audit-runbook.md`](docs/cis-ig1-audit-runbook.md) | **Start here to run an audit.** Eleven phases, prerequisites through teardown. |
+| [`docs/cis-ig1-scripted-audit.md`](docs/cis-ig1-scripted-audit.md) | **Just running the scripts.** Setup, impersonation, both passes, reading the output. |
 | [`docs/cis-ig1-tracker.xlsx`](docs/cis-ig1-tracker.xlsx) | **Tracking the work.** All 290 requirements as a spreadsheet; imports into Google Sheets. |
 | [`docs/cis-ig1-overview.md`](docs/cis-ig1-overview.md) | **Before the audit.** Why each of the 18 Controls exists, what it achieves, and what it touches in a GCP estate. Read once for context. |
 | [`docs/cis-ig1-gcp-checklist.md`](docs/cis-ig1-gcp-checklist.md) | **During the audit.** 44 GCP-actionable safeguards, each with a Compliant / Not Compliant marker and per-requirement checkboxes. |
@@ -93,7 +94,7 @@ Both Go files carry `//go:build ignore`. They are standalone scripts, and withou
 
 ## The audit identity
 
-`terraform/audit-service-account/` provisions the read-only service account the audit runs as.
+`terraform/` provisions the read-only service account the audit runs as. [Run and teardown instructions](terraform/readme.md), including manual Console checks to confirm nothing is left behind.
 
 ```bash
 cd terraform/audit-service-account

@@ -33,7 +33,7 @@ terraform plan                                 # review with the customer
 terraform apply
 
 eval "$(terraform output -raw impersonate_command)"
-gcloud auth list --filter=status:ACTIVE --format='value(account)'   # must show the SA
+gcloud config get-value auth/impersonate_service_account   # must show the SA
 ```
 
 Run the audit, then:

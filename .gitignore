@@ -78,13 +78,19 @@ audit-run.log
 # ---------------------------------------------------------------------------
 # State names the audit identity and its bindings, and tfvars names the
 # principals who may impersonate it. Neither belongs in git.
+#
+# .terraform/ holds downloaded provider binaries — the google provider alone is
+# ~116 MB, over GitHub's 100 MB per-file limit. Never commit it.
 **/.terraform/
-**/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 terraform.tfvars
 !terraform.tfvars.example
 crash.log
+
+# .terraform.lock.hcl SHOULD be committed — it pins provider versions so every
+# operator resolves the same ones. It is small and contains no secrets.
+!**/.terraform.lock.hcl
 
 # audit-state/audit.env holds two bucket names and is committed with the rest
 # of the run, so a result can be reproduced from the config that produced it.

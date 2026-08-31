@@ -9,8 +9,15 @@ output "impersonate_command" {
 }
 
 output "verify_command" {
-  description = "Confirm the switch took effect. Must print the service account, not your own address."
-  value       = "gcloud auth list --filter=status:ACTIVE --format='value(account)'"
+  description = <<-EOT
+    Confirm impersonation is active. Must print the service account.
+
+    Note: `gcloud auth list` is NOT the right check — it shows the authenticated
+    account, which stays as your own user. Impersonation layers a short-lived
+    service account token over that credential rather than replacing it, which
+    is precisely why audit logs can record both identities.
+  EOT
+  value       = "gcloud config get-value auth/impersonate_service_account"
 }
 
 output "audit_command" {

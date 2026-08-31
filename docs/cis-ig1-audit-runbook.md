@@ -119,16 +119,16 @@ terraform apply
 
 `terraform plan` is worth showing the customer before you apply — it is an exact, reviewable statement of what the audit will be able to read.
 
-Every permission is read-only. Where the only predefined role carried a write verb, the module substitutes a custom role with an explicit permission list — including replacing `roles/storage.admin`, which can delete buckets, with a three-permission reader. See the [module README](../terraform/audit-service-account/README.md).
+Every permission is read-only. Where the only predefined role carried a write verb, the module substitutes a custom role with an explicit permission list — including replacing `roles/storage.admin`, which can delete buckets, with a three-permission reader. See the [module readme](../terraform/audit-service-account/readme.md).
 
 Then switch to the audit identity:
 
 ```bash
 eval "$(terraform output -raw impersonate_command)"
-gcloud auth list --filter=status:ACTIVE --format='value(account)'
+gcloud config get-value auth/impersonate_service_account
 ```
 
-That must print the service account, not your own address.
+That must print the service account. Note `gcloud auth list` will still show *your* address — impersonation layers on top of your credential rather than replacing it, which is why audit logs record both identities.
 
 > **Enable the APIs before switching**, or as your own user — a brand-new service account has no rights yet, including the right to enable services. To step back briefly:
 > ```bash
@@ -198,13 +198,13 @@ Record it as Step 0 in the checklist. It determines how much of Controls 3, 4, 5
 
 Six checks, one per permission family. Cheaper to fail here than 188 checks later.
 
-Confirm you are running as the service account, not yourself:
+Confirm impersonation is active:
 
 ```bash
-gcloud auth list --filter=status:ACTIVE --format="value(account)"
+gcloud config get-value auth/impersonate_service_account
 ```
 
-That must print `cis-auditor@...`. If it prints your own address, impersonation is not active and the smoke test proves nothing about the identity that will do the audit.
+That must print the auditor service account. If it prints nothing, impersonation is not set and the smoke test proves nothing about the identity that will do the audit.
 
 ```bash
 go run audit-run.go -only V43,V27,V86,V91,V125,V181 -org="$ORG_ID"
@@ -420,7 +420,7 @@ go run compliance-report.go --update     # sync Status lines to the checkboxes
 gcloud config unset auth/impersonate_service_account
 
 # Confirm you are back to your own account
-gcloud auth list --filter=status:ACTIVE --format="value(account)"
+gcloud config get-value auth/impersonate_service_account
 ```
 
 ### Destroy the audit identity

@@ -11,12 +11,13 @@ Six documents. **Start with the runbook** — it sequences the rest.
 | I want to… | Go to |
 |---|---|
 | **Run an audit end to end** | **[Runbook](cis-ig1-audit-runbook.md)** |
+| **Just run the scripts** | **[Scripted audit](cis-ig1-scripted-audit.md)** — setup, impersonation, both passes |
 | Understand what IG1 is and why each Control exists | [Overview](cis-ig1-overview.md) |
 | Assess the organization and record findings | [Checklist](cis-ig1-gcp-checklist.md) |
 | Run the `gcloud` command that proves an item compliant | [CLI Validation](cis-ig1-cli-validation.md) |
 | Fix something that came up non-compliant | [Remediation Reference](cis-ig1-remediation-reference.md) |
 | See what benchmark work contributes toward IG1 | [Benchmark Contribution](cis-ig1-benchmark-overlap.md) |
-| Find out how much is already done | [`../README.md`](../README.md#scoring) |
+| Find out how much is already done | [`../readme.md`](../readme.md#scoring) |
 
 ---
 
@@ -38,6 +39,14 @@ Follow [`cis-ig1-audit-runbook.md`](cis-ig1-audit-runbook.md) — ten phases fro
 **[`cis-ig1-audit-runbook.md`](cis-ig1-audit-runbook.md)** — the operational sequence: prerequisites and API enablement, permission smoke test, positive controls for the `jq` checks, full run, triage order, and how to report the result without it being misread.
 
 Read this first if you are running an audit rather than reading about one.
+
+---
+
+## 0b. Scripted audit
+
+**[`cis-ig1-scripted-audit.md`](cis-ig1-scripted-audit.md)** — the automated half only: prerequisites, creating and impersonating the audit service account, the smoke test, the organization pass, the per-project passes, and reading the output.
+
+Copy-pasteable start to finish. Use the runbook when you need the manual work and teardown as well.
 
 ---
 
