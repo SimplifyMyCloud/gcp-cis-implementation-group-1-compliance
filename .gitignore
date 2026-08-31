@@ -1,0 +1,99 @@
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+# Finder writes .DS_Store into every directory it displays, recording view
+# settings (icon positions, window size, sort order). Harmless locally, but it
+# also embeds the directory listing — including names of since-deleted files —
+# which is why it is treated as an information disclosure finding when it ends
+# up on a web server.
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------------------------------------------------------------------------
+# Windows
+# ---------------------------------------------------------------------------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---------------------------------------------------------------------------
+# Linux
+# ---------------------------------------------------------------------------
+*~
+.fuse_hidden*
+.nfs*
+
+# ---------------------------------------------------------------------------
+# Editors
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# ---------------------------------------------------------------------------
+# Working notes
+# ---------------------------------------------------------------------------
+# Completed checklists are audit evidence and may name findings in a live
+# estate. Keep filled-in copies out of the repo unless that is deliberate.
+*-completed.md
+*-filled.md
+/scratch/
+
+# ---------------------------------------------------------------------------
+# Go
+# ---------------------------------------------------------------------------
+# Only if someone builds the script rather than `go run`-ing it.
+/compliance-report
+/audit-run
+
+# ---------------------------------------------------------------------------
+# Audit output
+# ---------------------------------------------------------------------------
+# Audit results ARE committed here — this repository is private and holds the
+# engagement's evidence alongside the tooling that produced it.
+#
+# What that means in practice: results name every public bucket, every
+# over-permissioned account, and every open firewall rule in the estate. Repo
+# access is therefore access to the findings, so keep the access list matched
+# to who should see them. If this repository is ever made public, forked, or
+# moved between organizations, the results go with it — git history outlives
+# the private setting.
+#
+# Only build artefacts and scratch files are ignored:
+audit-run.log
+*.cis.json
+
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+# State names the audit identity and its bindings, and tfvars names the
+# principals who may impersonate it. Neither belongs in git.
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+!terraform.tfvars.example
+crash.log
+
+# audit-state/audit.env holds two bucket names and is committed with the rest
+# of the run, so a result can be reproduced from the config that produced it.
+#
+# Nothing in this repository should ever hold a credential. Service account
+# keys in particular: the audit runs by impersonation precisely so that no key
+# exists, and committing one would break safeguard 5.2 — which this repository
+# exists to test.
+*.json.key
+*-key.json
+credentials.json
+service-account*.json
