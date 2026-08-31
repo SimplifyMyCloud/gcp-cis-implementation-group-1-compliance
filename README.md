@@ -15,6 +15,7 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 | [`docs/cis-ig1-tracker.xlsx`](docs/cis-ig1-tracker.xlsx) | Spreadsheet for tracking effort. Imports into Sheets. |
 | [`docs/training/`](docs/training/) | 20-minute class for SREs. |
 | [`terraform/`](terraform/) | The read-only audit service account. |
+| [`gcloud/`](gcloud/) | Same account via shell scripts, where Terraform is unavailable. |
 
 ## The numbers
 

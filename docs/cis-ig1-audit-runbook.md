@@ -77,7 +77,7 @@ The audit runs as a dedicated read-only service account you impersonate — neve
 ```bash
 cd terraform/audit-service-account
 gcloud auth application-default login    # ADC — separate from `gcloud auth login`
-cp terraform.tfvars.example terraform.tfvars   # then edit
+# edit terraform.tfvars
 terraform init && terraform plan && terraform apply
 
 eval "$(terraform output -raw impersonate_command)"

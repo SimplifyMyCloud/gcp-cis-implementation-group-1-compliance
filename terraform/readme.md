@@ -1,5 +1,7 @@
 # Terraform — CIS IG1 audit service account
 
+> **No Terraform available?** [`../gcloud/`](../gcloud/readme.md) does the same thing with shell scripts — identical roles, identical guarantees.
+
 Provisions the read-only service account that a CIS IG1 compliance audit runs as.
 
 **This creates the identity only.** It runs no compliance checks, reads no findings, and produces no report — that tooling is separate and comes later. What you are reviewing here is a service account, a set of read-only role bindings, and the ability for named people to impersonate it.
@@ -29,10 +31,9 @@ cd terraform/audit-service-account
 # Terraform uses Application Default Credentials — separate from `gcloud auth login`
 gcloud auth application-default login
 
-cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars`:
+Edit `terraform.tfvars` — four values:
 
 ```hcl
 organization_id = "123456789012"

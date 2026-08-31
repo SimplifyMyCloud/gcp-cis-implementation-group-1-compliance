@@ -76,16 +76,20 @@ audit-run.log
 # ---------------------------------------------------------------------------
 # Terraform
 # ---------------------------------------------------------------------------
-# State names the audit identity and its bindings, and tfvars names the
-# principals who may impersonate it. Neither belongs in git.
+# State records the audit identity and every binding it created. It is the
+# teardown record and must not be committed.
 #
 # .terraform/ holds downloaded provider binaries — the google provider alone is
 # ~116 MB, over GitHub's 100 MB per-file limit. Never commit it.
+#
+# terraform.tfvars IS committed: it holds an organization ID, a project ID and
+# a list of auditor emails. None of those are credentials, and committing it
+# means anyone can reproduce exactly what was applied.
 **/.terraform/
 *.tfstate
 *.tfstate.*
-terraform.tfvars
-!terraform.tfvars.example
+*.tfplan
+tfplan
 crash.log
 
 # .terraform.lock.hcl SHOULD be committed — it pins provider versions so every

@@ -27,7 +27,7 @@ Detail for each of these is below: [what is granted](#exactly-what-is-granted) �
 # `gcloud auth login`. Run this once, as yourself, before init.
 gcloud auth application-default login
 
-cp terraform.tfvars.example terraform.tfvars   # then edit
+# edit terraform.tfvars
 terraform init
 terraform plan                                 # review with the customer
 terraform apply
@@ -244,6 +244,18 @@ Three permissions had no safe predefined role, so each gets a custom role with a
 | `StorageReader` | `roles/storage.admin` | The predefined role grants create, update and **delete** on every bucket *and object* in the organization. The audit only reads bucket configuration and bucket IAM, so this role has no object permission at all. |
 | `KeyReader` | `roles/iam.serviceAccountKeyAdmin` | The only predefined role carrying `iam.serviceAccountKeys.list` can also **create and delete keys**. Granting it to an audit identity would breach safeguard 5.2 — the safeguard this permission exists to test. |
 | `IapReader` | `roles/iap.settingsAdmin` | Carries `updateSettings` alongside `getSettings`. No read-only equivalent exists. |
+
+## State
+
+State is **not committed**. It records the audit identity and every binding created, and `terraform destroy` reads it to remove them — lose it and you are revoking 35 organization bindings by hand.
+
+Local state is fine here: this module is short-lived, applied and destroyed by one person during an engagement. Keep `terraform.tfstate` until teardown is complete and verified, then delete it with the rest of the engagement artefacts.
+
+If more than one person will apply or destroy it, uncomment the GCS backend in `versions.tf` so state is shared and locked. Create the bucket with versioning on first.
+
+`.gitignore` covers `*.tfstate`, `*.tfstate.*`, `*.tfplan`, and `.terraform/` — that last one holds provider binaries, ~116 MB for the google provider, over GitHub's file size limit.
+
+`terraform.tfvars` **is** committed. It holds an organization ID, a project ID and auditor emails — none of them credentials — so committing it means anyone can reproduce exactly what was applied.
 
 ## Why bindings are additive
 
