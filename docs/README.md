@@ -2,7 +2,8 @@
 
 | I want to… | Go to |
 |---|---|
-| Run an audit end to end | [Runbook](cis-ig1-audit-runbook.md) |
+| **Run it now, copy-paste** | **[Run sheet](cis-ig1-run-sheet.md)** |
+| Run an audit end to end, with context | [Runbook](cis-ig1-audit-runbook.md) |
 | Just run the scripts | [Scripted audit](cis-ig1-scripted-audit.md) |
 | Understand what IG1 is | [Overview](cis-ig1-overview.md) |
 | Record findings | [Checklist](cis-ig1-gcp-checklist.md) |

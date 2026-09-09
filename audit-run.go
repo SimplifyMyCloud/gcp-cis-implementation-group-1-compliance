@@ -187,7 +187,9 @@ func main() {
 
 	checks, err := parseDoc(*docPath, subs)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "audit-run: %v\n", err)
+		fmt.Fprintf(os.Stderr, "audit-run: cannot read %s\n  %v\n\n"+
+			"  The checks live in that document — run this from the repository root,\n"+
+			"  or point at it with -doc.\n", *docPath, err)
 		os.Exit(2)
 	}
 	if len(checks) == 0 {
@@ -214,6 +216,7 @@ func main() {
 		checks = f
 	case "project":
 		auditTarget = "project " + *project
+		auditScope = "project"
 		if *project == "" {
 			fmt.Fprintln(os.Stderr, "audit-run: -scope=project needs -project=PROJECT_ID\n"+
 				"  The project pass targets one project per run. List them with:\n"+
@@ -807,6 +810,13 @@ func renderText(w *os.File, rs []result, showAll bool) {
 // once there are dozens of them.
 var auditTarget = "organization"
 
+// auditScope is "org" or "project". The manual worksheets are generated from
+// the checklist rather than from the estate, so they are identical in every
+// pack — writing them per project would produce 105 copies of the same 72
+// process requirements and imply they need answering project by project when
+// they are organization-level.
+var auditScope = "org"
+
 func writePack(dir string, rs []result, manual []manualItem) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -820,6 +830,29 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	t := tally(rs)
 	fmt.Fprintf(&a, "# 1. Automated Results\n\nOrganization `%s` · scope: **%s** · %s\n\n", org, target, stamp)
 	fmt.Fprintf(&a, "%d checks run by `audit-run.go`.\n\n", len(rs))
+
+	// A run that mostly errored produces a pack full of ERROR verdicts that
+	// looks superficially like a set of findings. State the run's health up
+	// front so a rollup — and a reader — can tell the two apart.
+	broken := t[vDenied] + t[vError]
+	pct := 0
+	if len(rs) > 0 {
+		pct = broken * 100 / len(rs)
+	}
+	switch {
+	case t[vDenied] > 0:
+		fmt.Fprintf(&a, "> **RUN STATUS: UNRELIABLE** — %d check(s) returned DENIED. "+
+			"The audit identity is missing permissions, so passes cannot be trusted: "+
+			"a permission gap converts silently into a false PASS on some checks. "+
+			"Fix the grants and re-run before using these results.\n\n", t[vDenied])
+	case pct >= 20:
+		fmt.Fprintf(&a, "> **RUN STATUS: DEGRADED** — %d%% of checks errored. "+
+			"Treat this pack as incomplete rather than as findings.\n\n", pct)
+	case broken > 0:
+		fmt.Fprintf(&a, "> **RUN STATUS: OK with %d error(s)** — see the Problems table.\n\n", broken)
+	default:
+		fmt.Fprintf(&a, "> **RUN STATUS: OK** — every check executed.\n\n")
+	}
 	fmt.Fprintf(&a, "| Verdict | Count | Meaning |\n|---|---|---|\n")
 	fmt.Fprintf(&a, "| PASS | %d | Compliant — tick the checklist |\n", t[vPass])
 	fmt.Fprintf(&a, "| FAIL | %d | A finding — output below |\n", t[vFail])
@@ -855,6 +888,14 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	}
 	if err := os.WriteFile(dir+"/01-automated-results.md", []byte(a.String()), 0o644); err != nil {
 		return err
+	}
+
+	// The manual worksheets are organization-level. Skip them on project runs.
+	if auditScope == "project" {
+		fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
+		fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks\n", len(rs))
+		fmt.Fprintf(os.Stderr, "  (manual worksheets are organization-level — see the org pack)\n")
+		return nil
 	}
 
 	// ---------- 02 manual CLI / GCP ----------

@@ -1,12 +1,11 @@
-organization_id = "933250405420"
-host_project_id = "simplifymycloud-dev"
+# Edit these four values, then: terraform init && terraform plan && terraform apply
 
-auditor_principals = [
-  "user:chris@simplifymy.cloud",
+organization_id = "REPLACE_ORG_ID"          # gcloud organizations list
+host_project_id = "REPLACE_PROJECT_ID"      # project that owns the SA and carries API quota
+
+auditor_principals = [                      # who may impersonate the audit identity
+  "user:REPLACE_EMAIL",
 ]
 
-# Set false where SCC is not licensed — the binding fails otherwise.
-enable_securitycenter = false
-
-# Leave false when the billing account sits outside the audited organization.
-enable_billing_viewer = true
+enable_securitycenter = false               # true only where SCC is licensed
+enable_billing_viewer = false               # true if the billing account is inside this org

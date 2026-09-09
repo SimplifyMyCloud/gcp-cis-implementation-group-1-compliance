@@ -6,7 +6,8 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 
 | | |
 |---|---|
-| [`docs/cis-ig1-audit-runbook.md`](docs/cis-ig1-audit-runbook.md) | **Start here.** Eleven phases, prerequisites through teardown. |
+| [`docs/cis-ig1-run-sheet.md`](docs/cis-ig1-run-sheet.md) | **At the terminal.** Flat copy-paste commands, org then per project. |
+| [`docs/cis-ig1-audit-runbook.md`](docs/cis-ig1-audit-runbook.md) | The same, with context and reasoning. |
 | [`docs/cis-ig1-scripted-audit.md`](docs/cis-ig1-scripted-audit.md) | Just the terminal work. |
 | [`docs/cis-ig1-overview.md`](docs/cis-ig1-overview.md) | Why each of the 18 Controls exists. Read once. |
 | [`docs/cis-ig1-gcp-checklist.md`](docs/cis-ig1-gcp-checklist.md) | The working checklist — 290 requirements. |
@@ -42,6 +43,7 @@ cd ../..
 go run audit-run.go -scope=org -org=$ORG_ID -pack ./audit-state/org
 go run audit-run.go -scope=project -org=$ORG_ID -project=PROJECT -pack ./audit-state/projects/PROJECT
 
+go run rollup.go -in ./audit-state  # 105 packs → one remediation plan
 go run compliance-report.go        # score the checklist
 ```
 
@@ -64,7 +66,13 @@ go run compliance-report.go --update     # sync Status lines to the checkboxes
 
 Requirements can be `Not started`, `In progress`, `PR submitted`, `Compliant`, or `N/A`. `PR submitted` moves an item from engineering's queue to awaiting management approval, and the report ages it.
 
-Both Go files carry `//go:build ignore` — they are standalone scripts, run with `go run <file>.go`. Audit results are committed to this repository, which is private.
+### The Go scripts
+
+`audit-run.go`, `rollup.go` and `compliance-report.go` are **standard library only**. No `go.mod`, no dependencies, no build step — `go run <file>.go` works on any machine with Go installed.
+
+That is deliberate and worth protecting. These run inside a customer's environment, and "install these modules first" is a conversation you do not want to have there. Where a dependency would buy convenience — writing `.xlsx` directly rather than emitting CSV, for instance — **take the CSV and the three clicks.**
+
+Each file carries `//go:build ignore` so several `package main` files can share a directory without colliding under `go vet ./...`. Audit results are committed to this repository, which is private.
 
 ---
 

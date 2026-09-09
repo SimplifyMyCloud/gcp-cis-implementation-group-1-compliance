@@ -1,5 +1,7 @@
 # Audit Runbook
 
+> Running it right now? [`cis-ig1-run-sheet.md`](cis-ig1-run-sheet.md) is the same sequence as bare commands with no explanation. This page is the reasoning behind them.
+
 How to validate a GCP Organization against CIS IG1 using the documents and scripts in this repository.
 
 ## What gets automated, and what does not
@@ -252,6 +254,30 @@ Each pack is self-identifying — `01-automated-results.md` names the project it
 - [ ] `projects.txt` written
 - [ ] A pack produced for every project
 - [ ] Projects with `DENIED` or `ERROR` noted for a second look
+
+---
+
+## Phase 6b — Compile the plan
+
+Once every project pass is done, turn 105 packs into one work list:
+
+```bash
+go run rollup.go -in ./audit-state \
+  -out ./audit-state/remediation-plan.md \
+  -csv ./audit-state/remediation-plan.csv
+```
+
+Pivoted on the **finding**, not the project — one org policy change that fixes 40 projects is one work item, not forty. Ranked by how many projects each affects.
+
+**Scope** on each row says where the work happens: `org` once, `project × N` repeated, or `org + project × N` for both — apply the constraint *and* clean up what already violates it, because org policy is not retroactive.
+
+Packs whose run was `UNRELIABLE` or `DEGRADED` are **excluded and listed separately**. A permission failure is not a compliance finding, and counting it would invent work.
+
+Import the CSV into the tracker as a new tab: **File → Import → Upload → Insert new sheet**.
+
+- [ ] `remediation-plan.md` produced
+- [ ] Excluded packs re-run
+- [ ] CSV imported into the tracker
 
 ---
 
