@@ -460,7 +460,7 @@ V86 writes to `${AUDIT_PACK_DIR:-./audit-state}`. V175 uses `mktemp`. Verified: 
 ## Test fixtures
 
 From here, deliberately non-compliant resources were deployed to `iq9-gcp-dev-yamato`
-(uncommitted Terraform in `scratch/test-infra/`) so checks had something to find: an auto-mode
+(uncommitted Terraform, now in `scratch/teardown/test-infra/`) so checks had something to find: an auto-mode
 VPC, an e2-micro VM (external IP, not shielded, default compute SA, unlabelled, no rule reaches
 it), internet-open firewall rules for tcp:3306, **all protocols**, and tcp:**20-25** (all targeting
 a tag nothing carries), an untargeted internal rule, a BigQuery dataset with no expiration, and a
@@ -993,6 +993,27 @@ blocks run without error. The open-ports query finds 14 rules, including the thr
 
 **Fix** — Restored `REPLACE_*` placeholders, with the prefix line commented. `terraform plan` now
 stops with "organization_id must be the numeric ID only". Test-org values moved to
-`scratch/test-org.tfvars`; the live test identity is still managed with
-`terraform plan -var-file=../../scratch/test-org.tfvars` (No changes). Terraform readme counts
+`scratch/teardown/test-org.tfvars`; the live test identity is still managed with
+`terraform plan -var-file=../../scratch/teardown/test-org.tfvars` (No changes). Terraform readme counts
 corrected: 33 roles and 38 resources by default, not "35" and "around 40".
+
+## BUG-037 — Remediation plan links break when the output path is absolute
+
+| | |
+|---|---|
+| Found | 2026-09-14, first `run-audit.sh` run |
+| Component | `rollup.go` — `writePlan()` |
+| Severity | cosmetic — every check link in the plan 404s |
+
+**Error**
+
+```
+Check [V147](docs/cis-ig1-cli-validation.md#v147)      # plan at scratch/runs/<run>/report/, via an absolute -out path
+```
+
+**Cause** — The BUG-024 fix computed `filepath.Rel(dir-of-out, "docs")`. That errors when one path
+is absolute and the other relative, and the fallback was the bare `docs`. `run-audit.sh` passes
+absolute paths.
+
+**Fix** — Both paths made absolute before `Rel`. Verified with an absolute and a relative `-out`:
+both produce `../../docs/…` from two levels down.

@@ -44,6 +44,14 @@ Three values only: `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT`. Every
 
 ## Run
 
+In one command — org pass, project passes, rollup and score, filed into `scratch/runs/<date_time>/report/` and `evidence/`:
+
+```bash
+./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --projects projects.txt   # or --project ID / --all
+```
+
+Or step by step:
+
 ```bash
 # Organization — 68 checks, once. Always first.
 go run audit-run.go -scope=org -org="$ORG_ID" \

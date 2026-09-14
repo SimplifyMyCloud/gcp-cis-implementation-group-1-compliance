@@ -119,6 +119,33 @@ done
 
 Edit `./audit-state/audit.env` — three values: `BACKUP_BUCKET`, `TFSTATE_BUCKET`, `BACKUP_PROJECT`. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
 
+## A9a. Shortcut — the whole audit in one command
+
+Everything from A10 to C2 in one step, filed into a dated run directory. Skip to C3 afterwards.
+
+```bash
+gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt   # edit to taste
+./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --projects ./audit-state/projects.txt
+```
+
+```
+scratch/runs/2026-09-14_12-58-20/
+  report/                        what the auditor reads, in reading order
+    01-remediation-plan.md
+    02-organization/
+      01-automated-results.md
+      02-manual-gcp-tasks.md
+      03-manual-process.md
+    03-projects/
+      <project-id>.md            one per project
+    04-compliance-score.txt
+    remediation-plan.csv         import into the tracker
+  evidence/
+    audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
+```
+
+`--project ID` (repeatable) or `--all` instead of `--projects`. Projects that don't exist or can't be seen are listed as `not found` and skipped. The summary at the end shows every pass's `RUN STATUS`.
+
 ## A10. Organization pass
 
 ```bash

@@ -118,6 +118,12 @@ Every mode:
 
 ## Output (D5)
 
+**Use the local layout.** `run-audit.sh` (in the repository since 2026-09-14) already files a run as
+`runs/<YYYY-MM-DD_HH-MM-SS>/report/` (01-remediation-plan, 02-organization/, 03-projects/<id>.md,
+04-compliance-score) and `evidence/` (audit.env, targets, run.log, iam-inventory). The Cloud Run
+build should write the same tree under the bucket, so local and automated runs read the same way.
+The `run_id` format below changes to match.
+
 ```
 gs://<results_bucket>/runs/<run_id>/
   targets.txt

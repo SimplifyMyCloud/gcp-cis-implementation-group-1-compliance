@@ -240,8 +240,12 @@ func writePlan(path string, fs []finding, packs []packInfo, usable, excluded int
 	// Links resolve relative to wherever the plan is written (the runbook puts
 	// it in audit-state/), not to docs/. Run from the repository root.
 	docs := "docs"
-	if rel, err := filepath.Rel(filepath.Dir(path), "docs"); err == nil {
-		docs = filepath.ToSlash(rel)
+	absOut, err1 := filepath.Abs(filepath.Dir(path))
+	absDocs, err2 := filepath.Abs("docs")
+	if err1 == nil && err2 == nil {
+		if rel, err := filepath.Rel(absOut, absDocs); err == nil {
+			docs = filepath.ToSlash(rel)
+		}
 	}
 
 	b.WriteString("## Detail\n\n")

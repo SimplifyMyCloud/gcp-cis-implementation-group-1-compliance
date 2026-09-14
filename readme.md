@@ -56,6 +56,32 @@ go run rollup.go -in ./audit-state -out ./audit-state/remediation-plan.md -csv .
 go run compliance-report.go        # score the checklist
 ```
 
+**Or run the whole audit with one command.** Once impersonation is set and `audit.env` is filled in, `run-audit.sh` runs the org pass, the project passes, rollup and the score, and files everything for that run into one dated directory:
+
+```bash
+./run-audit.sh --org $ORG_ID --config ./audit-state/audit.env --project PROJECT     # repeatable
+./run-audit.sh --org $ORG_ID --config ./audit-state/audit.env --projects list.txt  # one ID per line
+./run-audit.sh --org $ORG_ID --config ./audit-state/audit.env --all                # every ACTIVE project
+```
+
+```
+scratch/runs/2026-09-14_12-58-20/
+  report/                        what the auditor reads, in reading order
+    01-remediation-plan.md
+    02-organization/
+      01-automated-results.md
+      02-manual-gcp-tasks.md
+      03-manual-process.md
+    03-projects/
+      <project-id>.md            one per project
+    04-compliance-score.txt
+    remediation-plan.csv         import into the tracker
+  evidence/
+    audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
+```
+
+Runs go to `./scratch/runs/` (git-ignored) by default; `--out ./audit-state/runs` keeps them in the repository. It exits non-zero only if a pass is `UNRELIABLE` or `DEGRADED`.
+
 A healthy pass says `RUN STATUS: OK` at the top of `01-automated-results.md`. `audit-run.go` exits non-zero whenever a check FAILs — that means findings, not a broken run. Step-by-step: [run sheet](docs/cis-ig1-run-sheet.md).
 
 The audit runs as a read-only service account, impersonated never keyed — a key would breach safeguard 5.2, which this audit tests. `terraform destroy` removes every trace.

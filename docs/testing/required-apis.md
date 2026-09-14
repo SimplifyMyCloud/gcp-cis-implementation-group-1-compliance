@@ -125,7 +125,7 @@ project, the pack's "Not applicable" table names it.
 | `gkebackup.googleapis.com` | V156 | not called (no GKE clusters) | not observed |
 
 To exercise these checks, the test enabled them in the disposable target project. The list is in
-`scratch/test-infra/yamato-apis-enabled-by-test.txt` for teardown. In a customer audit, don't enable
+`scratch/teardown/test-infra/yamato-apis-enabled-by-test.txt` for teardown. In a customer audit, don't enable
 them.
 
 In run 8, V116 briefly came back N/A with `osconfig.googleapis.com not enabled` about 20 minutes
