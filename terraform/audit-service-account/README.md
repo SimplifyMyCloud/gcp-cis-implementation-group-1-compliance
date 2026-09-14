@@ -273,7 +273,7 @@ Several checks iterate every project. A role held on only some projects makes th
 
 ## Known operational edges
 
-**Custom roles are soft-deleted for 7 days, and their IDs stay reserved for 30.** Destroy and re-apply inside that window and the create fails. Either `gcloud iam roles undelete`, or change `custom_role_prefix`.
+**Custom role IDs outlive the roles.** A deleted custom role can be undeleted for 7 days. After that, `gcloud iam roles describe` and `undelete` return NOT_FOUND and `roles list --show-deleted` shows nothing — yet the ID stays reserved until Google purges it (up to ~37 days). Re-applying in that window fails with `You can't create a role_id (...) which has been marked for deletion`. Within 7 days, `gcloud iam roles undelete`; after that, change `custom_role_prefix` in `terraform.tfvars`.
 
 **`roles/securitycenter.adminViewer` fails where SCC is not licensed.** Set `enable_securitycenter = false`.
 

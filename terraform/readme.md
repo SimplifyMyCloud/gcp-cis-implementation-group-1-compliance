@@ -177,6 +177,6 @@ terraform destroy           # safe to re-run
 
 Two known edges:
 
-**Custom role IDs stay reserved for 30 days** after deletion. Re-applying inside that window fails on the create. Either `gcloud iam roles undelete`, or change `custom_role_prefix` in `terraform.tfvars`.
+**Custom role IDs outlive the roles.** A deleted custom role can be undeleted for 7 days. After that, `gcloud iam roles describe` and `undelete` return NOT_FOUND and `roles list --show-deleted` shows nothing — yet the ID stays reserved until Google purges it (up to ~37 days). Re-applying in that window fails with `You can't create a role_id (...) which has been marked for deletion`. Within 7 days, `gcloud iam roles undelete`; after that, change `custom_role_prefix` in `terraform.tfvars`.
 
 **A `billing.viewer` grant made directly on a billing account** is outside Terraform state and will not be removed by destroy. If you granted it by hand, revoke it by hand.

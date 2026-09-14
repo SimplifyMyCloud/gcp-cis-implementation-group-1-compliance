@@ -212,7 +212,7 @@ comm -23 /tmp/all-projects.txt /tmp/billed-projects.txt | sed 's|^|NO BILLING AC
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Disk --format=json \
+  --asset-types=compute.googleapis.com/Disk --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.users == null) | "UNATTACHED DISK: \(.name)"'
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
   --asset-types=compute.googleapis.com/Address --query="state:RESERVED" --format="value(name)"
@@ -310,7 +310,7 @@ gcloud sql instances list --format="table(name,databaseVersion,region)"
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | .name as $n | .versionedResources[]?.resource.disks[]?.licenses[]?
     | select(test("centos-7|debian-9|debian-10|ubuntu-1604|ubuntu-1804")) | "EOL OS: \($n)"'
 ```
@@ -392,12 +392,14 @@ gcloud container binauthz policy export \
 
 #### V22
 
-**Workloads already running unattested identified and rolled** · checklist `2.3#5` · scope: project · needs `kubectl`
+**Workloads already running unattested identified and rolled** · checklist `2.3#5` · scope: project · needs `jq`
 
 ```bash
-kubectl get pods --all-namespaces \
-  -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.spec.containers[*].image}{"\n"}{end}' \
-  | grep -v "gcr.io/google-containers"
+gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
+  --asset-types=k8s.io/Pod --read-mask='*' --format=json \
+  | jq -r '.[] | .versionedResources[]?.resource as $p
+    | "\($p.metadata.namespace // "?")\t\([$p.spec.containers[]?.image] | join(","))"' \
+  | grep -v "gcr.io/google-containers" || true
 ```
 
 **Pass:** Every image listed matches an approved registry.
@@ -522,7 +524,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
 ```bash
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read b; do
   u=$(gcloud storage buckets describe "gs://$b" --format="value(uniform_bucket_level_access)" 2>/dev/null)
-  [ "$u" != "True" ] && echo "LEGACY ACLs: $p / $b"
+  if [ "$u" != "True" ]; then echo "LEGACY ACLs: $PROJECT_ID / $b"; fi
 done
 ```
 
@@ -535,9 +537,9 @@ done
 ```bash
 DOMAIN=$(gcloud organizations describe $ORG_ID --format="value(displayName)")
 gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json \
-  | jq -r '.[] | .resource as $r | .policy.bindings[]?.members[]?
+  | jq -r --arg domain "$DOMAIN" '.[] | .resource as $r | .policy.bindings[]?.members[]?
     | select(startswith("user:") or startswith("group:"))
-    | select(test("@${DOMAIN//./\\.}$") | not) | "\($r)\t\(.)"' | sort -u
+    | select(ascii_downcase | endswith("@" + ($domain | ascii_downcase)) | not) | "\($r)\t\(.)"' | sort -u
 ```
 
 **Pass:** Empty, or every result is a documented and approved external grant.
@@ -620,7 +622,7 @@ gcloud access-context-manager perimeters list --policy=$POLICY_ID \
 ```bash
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read b; do
   l=$(gcloud storage buckets describe "gs://$b" --format="value(lifecycle_config)" 2>/dev/null)
-  [ -z "$l" ] && echo "NO LIFECYCLE RULE: $p / $b"
+  if [ -z "$l" ]; then echo "NO LIFECYCLE RULE: $PROJECT_ID / $b"; fi
 done
 ```
 
@@ -633,7 +635,7 @@ done
 ```bash
 for d in $(bq ls --format=json | jq -r '.[].id'); do
   exp=$(bq show --format=json "$d" | jq -r '.defaultTableExpirationMs // "none"')
-  [ "$exp" = "none" ] && echo "NO EXPIRATION: $d"
+  if [ "$exp" = "none" ]; then echo "NO EXPIRATION: $d"; fi
 done
 ```
 
@@ -730,7 +732,7 @@ gcloud org-policies list --organization=$ORG_ID --format="table(constraint,listP
 gcloud org-policies list --organization=$ORG_ID --format="value(constraint)" | while read c; do
   d=$(gcloud org-policies describe "$c" --organization=$ORG_ID --format="value(dryRunSpec)" 2>/dev/null)
   s=$(gcloud org-policies describe "$c" --organization=$ORG_ID --format="value(spec)" 2>/dev/null)
-  [ -n "$d" ] && [ -z "$s" ] && echo "DRY-RUN ONLY (not enforcing): $c"
+  if [ -n "$d" ] && [ -z "$s" ]; then echo "DRY-RUN ONLY (not enforcing): $c"; fi
 done
 ```
 
@@ -806,7 +808,7 @@ See V47 — the constraint is not retroactive.
 ```bash
 gcloud compute networks list --project="$PROJECT_ID" \
   --format="value(name,x_gcloud_subnet_mode)" 2>/dev/null \
-  | grep -E "LEGACY|AUTO"
+  | grep -E "LEGACY|AUTO" || true
 ```
 
 **Pass:** Empty output.
@@ -848,7 +850,7 @@ gcloud org-policies describe compute.restrictVpcPeering --organization=$ORG_ID -
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Firewall --format=json \
+  --asset-types=compute.googleapis.com/Firewall --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.logConfig.enable != true) | "NO LOGGING: \(.name)"'
 ```
 
@@ -891,7 +893,7 @@ gcloud iap settings get --resource-type=iap_web --project="$PROJECT_ID" \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Firewall --format=json \
+  --asset-types=compute.googleapis.com/Firewall --read-mask='*' --format=json \
   | jq -r '.[] | select([.versionedResources[]?.resource.sourceRanges[]?] | index("0.0.0.0/0"))
     | select([.versionedResources[]?.resource.allowed[]?.ports[]?] | any(. == "22" or . == "3389"))
     | "OPEN ADMIN PORT: \(.name)"'
@@ -905,7 +907,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Firewall --format=json \
+  --asset-types=compute.googleapis.com/Firewall --read-mask='*' --format=json \
   | jq -r '.[] | select([.versionedResources[]?.resource.sourceRanges[]?] | index("0.0.0.0/0"))
     | select([.versionedResources[]?.resource.allowed[]?.ports[]?]
       | any(. == "3306" or . == "5432" or . == "1433" or . == "27017" or . == "6379"))
@@ -943,7 +945,7 @@ gcloud compute firewall-rules list --project="$PROJECT_ID" \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Firewall --format=json \
+  --asset-types=compute.googleapis.com/Firewall --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.targetTags == null
     and .versionedResources[]?.resource.targetServiceAccounts == null) | "UNSCOPED: \(.name)"'
 ```
@@ -967,7 +969,7 @@ gcloud org-policies describe sql.restrictAuthorizedNetworks --organization=$ORG_
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=sqladmin.googleapis.com/Instance --format=json \
+  --asset-types=sqladmin.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.settings.ipConfiguration.ipv4Enabled == true)
     | "PUBLIC IP: \(.name)"'
 ```
@@ -1024,7 +1026,7 @@ gcloud org-policies describe compute.requireOsLogin --organization=$ORG_ID --eff
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | select([.versionedResources[]?.resource.metadata.items[]?
     | select(.key == "enable-oslogin" and (.value | ascii_upcase) == "TRUE")] | length == 0)
     | "NO OS LOGIN: \(.name)"'
@@ -1039,7 +1041,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 ```bash
 gcloud compute project-info describe --project="$PROJECT_ID" \
   --format="value(commonInstanceMetadata.items[].key)" 2>/dev/null \
-  | grep -qw "sshKeys" && echo "PROJECT-WIDE SSH KEYS: $p"
+  | grep -qw "sshKeys" && echo "PROJECT-WIDE SSH KEYS: $PROJECT_ID" || true
 ```
 
 **Pass:** Empty output.
@@ -1050,7 +1052,7 @@ gcloud compute project-info describe --project="$PROJECT_ID" \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.networkInterfaces[]?.accessConfigs != null)
     | "EXTERNAL IP: \(.name)"'
 ```
@@ -1063,7 +1065,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.shieldedInstanceConfig.enableSecureBoot != true)
     | "NOT SHIELDED: \(.name)"'
 ```
@@ -1096,7 +1098,7 @@ gcloud org-policies describe compute.vmExternalIpAccess --organization=$ORG_ID -
 
 ```bash
 gcloud compute firewall-rules list \
-  --filter="sourceRanges:35.235.240.0/20" --format="table(name,network,allowed[].map().firewall_rule().list())"
+  --filter="sourceRanges:(35.235.240.0/20)" --format="table(name,network,allowed[].map().firewall_rule().list())"
 ```
 
 **Pass:** IAP range rules exist; combined with V66 returning empty for admin hosts.
@@ -1138,7 +1140,7 @@ gcloud container clusters list --format=json \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | .name as $n | .versionedResources[]?.resource.metadata.items[]?
     | select(.key | test("(?i)secret|password|token|apikey|api_key")) | "SECRET IN METADATA: \($n) key=\(.key)"'
 ```
@@ -1158,12 +1160,10 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Default Compute Engine service account not holding Editor** · checklist `4.7#1` · scope: project · loops all projects — slow on a large estate
 
 ```bash
-gcloud projects list --format="value(projectId,projectNumber)" | while read p num; do
-  r=$(gcloud projects get-iam-policy "$p" --flatten="bindings[].members" \
-    --filter="bindings.members:${num}-compute@developer.gserviceaccount.com AND bindings.role:roles/editor" \
-    --format="value(bindings.role)" 2>/dev/null)
-  [ -n "$r" ] && echo "DEFAULT SA HAS EDITOR: $p"
-done
+num=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+gcloud projects get-iam-policy "$PROJECT_ID" --flatten="bindings[].members" \
+  --filter="bindings.members:${num}-compute@developer.gserviceaccount.com AND bindings.role:roles/editor" \
+  --format="value(bindings.role)" | sed "s|^|DEFAULT SA HAS EDITOR: $PROJECT_ID |"
 ```
 
 **Pass:** Empty output.
@@ -1173,9 +1173,9 @@ done
 **Default App Engine service account reduced** · checklist `4.7#2` · scope: project · loops all projects — slow on a large estate
 
 ```bash
-gcloud projects get-iam-policy "$p" --flatten="bindings[].members" \
-  --filter="bindings.members:${p}@appspot.gserviceaccount.com AND bindings.role:roles/editor" \
-  --format="value(bindings.role)" 2>/dev/null | grep -q editor && echo "APPENGINE SA HAS EDITOR: $p"
+gcloud projects get-iam-policy "$PROJECT_ID" --flatten="bindings[].members" \
+  --filter="bindings.members:${PROJECT_ID}@appspot.gserviceaccount.com AND bindings.role:roles/editor" \
+  --format="value(bindings.role)" | grep -q editor && echo "APPENGINE SA HAS EDITOR: $PROJECT_ID" || true
 ```
 
 **Pass:** Empty output.
@@ -1205,7 +1205,7 @@ See V71 and V72 — the constraint is not retroactive.
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | select([.versionedResources[]?.resource.serviceAccounts[]?.email]
     | any(test("developer\\.gserviceaccount\\.com$"))) | "DEFAULT SA IN USE: \(.name)"'
 ```
@@ -1832,7 +1832,7 @@ See V15.
 **Web Security Scanner run against exposed applications** · checklist `7.4#5` · scope: project
 
 ```bash
-gcloud web-security-scanner scan-configs list --project="$PROJECT_ID" \
+gcloud alpha web-security-scanner scan-configs list --project="$PROJECT_ID" \
   --format="table(displayName,startingUrls,schedule)"
 ```
 
@@ -1963,7 +1963,7 @@ gcloud logging sinks list --organization=$ORG_ID --format="value(name,destinatio
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Subnetwork --format=json \
+  --asset-types=compute.googleapis.com/Subnetwork --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.logConfig.enable != true) | "NO FLOW LOGS: \(.name)"'
 ```
 
@@ -2049,7 +2049,7 @@ gcloud logging sinks list --organization=$ORG_ID --format="value(destination)" \
 | while read -r b; do
     locked=$(gcloud storage buckets describe "gs://$b" \
       --format="value(retention_policy.isLocked)" 2>/dev/null)
-    [ "$locked" != "True" ] && echo "NO BUCKET LOCK: gs://$b"
+    if [ "$locked" != "True" ]; then echo "NO BUCKET LOCK: gs://$b"; fi
   done
 ```
 
@@ -2186,7 +2186,7 @@ See V24.
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Instance --format=json \
+  --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.shieldedInstanceConfig.enableIntegrityMonitoring != true)
     | "NO INTEGRITY MONITORING: \(.name)"'
 ```
@@ -2209,10 +2209,12 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 **Update path reachable from restricted-egress instances** · checklist `10.2#2` · scope: project · run per representative instance
 
-```bash
+```sh
 gcloud compute ssh INSTANCE --tunnel-through-iap --project="$PROJECT_ID" \
   --command="systemctl is-active clamav-freshclam; freshclam --version"
 ```
+
+*Run by hand. `audit-run.go` does not execute `sh` blocks: this logs in to an instance, which a read-only audit identity must not do.*
 
 **Pass:** Service active and version current. The common silent failure is egress filtering blocking the mirror.
 
@@ -2271,7 +2273,7 @@ gcloud sql instances list \
 
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=compute.googleapis.com/Disk --format=json \
+  --asset-types=compute.googleapis.com/Disk --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.resourcePolicies == null) | "NO SNAPSHOT SCHEDULE: \(.name)"'
 ```
 
@@ -2284,7 +2286,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 ```bash
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read -r b; do
   v=$(gcloud storage buckets describe "gs://$b" --format="value(versioning.enabled)" 2>/dev/null)
-  [ "$v" != "True" ] && echo "NO VERSIONING: $p / $b"
+  if [ "$v" != "True" ]; then echo "NO VERSIONING: $PROJECT_ID / $b"; fi
 done
 ```
 
@@ -2311,7 +2313,7 @@ gcloud container clusters list --project="$PROJECT_ID" --format="value(location)
 ```bash
 gcloud firestore backups list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null
 gcloud spanner instances list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read -r si; do
-  gcloud spanner backups list --instance="$si" --project="$PROJECT_ID" --format="value(name)" 2>/dev/null \
+  gcloud spanner backups list --instance="$si" --project="$PROJECT_ID" --format="value(name)" 2>/dev/null
 done
 ```
 
@@ -2430,7 +2432,8 @@ gcloud storage buckets describe gs://BACKUP_BUCKET --format="value(project_numbe
 **Backup project under a separate folder** · checklist `11.4#2` · scope: project
 
 ```bash
-gcloud projects describe BACKUP_PROJECT --format="value(parent.type,parent.id)"
+backup_project=BACKUP_PROJECT
+gcloud projects describe "$backup_project" --format="value(parent.type,parent.id)"
 ```
 
 **Pass:** Parent folder differs from production folders.
@@ -2440,7 +2443,8 @@ gcloud projects describe BACKUP_PROJECT --format="value(parent.type,parent.id)"
 **No shared credential reaches both production and backups** · checklist `11.4#3` · scope: project · needs `jq`
 
 ```bash
-gcloud projects get-iam-policy BACKUP_PROJECT --format=json \
+backup_project=BACKUP_PROJECT
+gcloud projects get-iam-policy "$backup_project" --format=json \
   | jq -r '.bindings[]?.members[]? | select(test("prod|production"))'
 ```
 
@@ -2523,7 +2527,10 @@ See V50.
 
 ```bash
 gcloud compute security-policies list --format="table(name,rules.len())"
-gcloud compute security-policies describe POLICY --format="value(rules[].description)"
+gcloud compute security-policies list --format="value(name)" | while read -r pol; do
+  echo "== $pol"
+  gcloud compute security-policies describe "$pol" --format="value(rules[].description)"
+done
 ```
 
 **Pass:** Policies exist with current preconfigured expression sets.

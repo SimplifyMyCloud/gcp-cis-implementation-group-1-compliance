@@ -77,6 +77,7 @@ type check struct {
 	missing    []string // unresolved placeholders
 	absent     []string // placeholders the operator declared non-existent
 	refs       []string // for xrefs: the checks this one defers to
+	byHand     string   // command the auditor runs manually (```sh block); never executed
 }
 
 // manualItem is a requirement with no CLI check: either a GCP task that must
@@ -104,6 +105,9 @@ var (
 	reTitle    = regexp.MustCompile(`\*\*(.+?)\*\* · checklist ` + "`" + `([\d]+\.[\d]+#[\d]+)` + "`")
 	reScope    = regexp.MustCompile(`· scope: (org|project|xref)`)
 	reBash     = regexp.MustCompile("(?s)```bash\n(.*?)\n```")
+	// A ```sh block is shown to the auditor but never executed: it does
+	// something a read-only audit identity must not (e.g. SSH to an instance).
+	reManualSh = regexp.MustCompile("(?s)```sh\n(.*?)\n```")
 	reCriteria = regexp.MustCompile(`(?m)^\*\*Pass:\*\* (.+)$`)
 	// A placeholder only counts where a value is genuinely expected: after
 	// "=" or "gs://". Matching bare UPPER_SNAKE anywhere produces false
@@ -116,7 +120,57 @@ var (
 	reSafeguardH  = regexp.MustCompile(`(?m)^## (\d+\.\d+) (.+)$`)
 	reManualHead  = regexp.MustCompile(`\*\*Manual — (GCP task, no CLI surface|process or documentation, not infrastructure):\*\*`)
 	reManualItem  = regexp.MustCompile("(?m)^- `(\\d+\\.\\d+#\\d+)` (.+)$")
+
+	// gcloud prints this on every impersonated call. It is not an error, and
+	// left in stderr it becomes the first — often the only visible — line of
+	// every Problems entry, hiding the real message beneath it.
+	reImpersonationNote = regexp.MustCompile(`(?m)^WARNING: This command is using service account impersonation\..*$\n?`)
+	// Something in the pipeline failed: gcloud, bq, jq, or bash itself.
+	reToolError = regexp.MustCompile(`(?m)^(ERROR: |BigQuery error|jq: error|bash: |.*syntax error|.*command not found)`)
+	// Names the disabled API and the project it is disabled in, from either
+	// gcloud's own "API [x] not enabled on project [n]" line or the activation
+	// URL in the SERVICE_DISABLED error body.
+	reDisabledAPI = regexp.MustCompile(`API \[([a-z0-9.-]+\.googleapis\.com)\] not enabled on project \[([^\]]+)\]` +
+		`|apis/api/([a-z0-9.-]+\.googleapis\.com)/overview\?project=([a-z0-9-]+)`)
 )
+
+// hostProjectNumber and hostProjectID identify the project that owns the
+// impersonated audit account, which is where gcloud bills the audit's API
+// calls. An API disabled there is a setup gap, reported as ERROR rather than
+// N/A. Both empty if they can't be determined.
+var hostProjectNumber, hostProjectID string
+
+// disabledAPI returns the API and project named in a SERVICE_DISABLED error.
+func disabledAPI(errText string) (api, project string, ok bool) {
+	m := reDisabledAPI.FindStringSubmatch(errText)
+	switch {
+	case m == nil:
+		return "", "", false
+	case m[1] != "":
+		return m[1], m[2], true
+	default:
+		return m[3], m[4], true
+	}
+}
+
+// resolveHostProject finds the audit host project from the impersonated
+// service account's email — NAME@PROJECT.iam.gserviceaccount.com.
+func resolveHostProject() {
+	out, err := exec.Command("gcloud", "config", "get-value", "auth/impersonate_service_account").Output()
+	if err != nil {
+		return
+	}
+	sa := strings.TrimSpace(string(out))
+	_, domain, ok := strings.Cut(sa, "@")
+	if !ok || !strings.HasSuffix(domain, ".iam.gserviceaccount.com") {
+		return
+	}
+	hostProjectID = strings.TrimSuffix(domain, ".iam.gserviceaccount.com")
+	num, err := exec.Command("gcloud", "projects", "describe", hostProjectID, "--format=value(projectNumber)").Output()
+	if err == nil {
+		hostProjectNumber = strings.TrimSpace(string(num))
+	}
+}
 
 // gcloud enum values that legitimately follow "=" and must not be treated
 // as placeholders awaiting substitution.
@@ -224,6 +278,14 @@ func main() {
 			os.Exit(2)
 		}
 		subs["PROJECT_ID"] = *project
+		// Most project checks read the project from the shell, not from a
+		// placeholder: `--project="$PROJECT_ID"` is deliberately not substituted
+		// (see rePlaceholder), and many commands carry no --project at all and
+		// fall back to gcloud's core/project. Without both of these, the pass
+		// silently audits an empty project or whatever gcloud was last pointed
+		// at — typically the audit host project.
+		os.Setenv("PROJECT_ID", *project)
+		os.Setenv("CLOUDSDK_CORE_PROJECT", *project)
 		var f []check
 		for _, c := range checks {
 			if c.scope == "project" || c.scope == "xref" {
@@ -277,6 +339,8 @@ func main() {
 		for _, c := range checks {
 			state := "runnable"
 			switch {
+			case c.byHand != "":
+				state = "by-hand"
 			case c.command == "":
 				state = "xref"
 			case len(c.missing) > 0:
@@ -290,8 +354,13 @@ func main() {
 		return
 	}
 
+	resolveHostProject()
 	if !*quiet {
-		fmt.Fprintf(os.Stderr, "Running %d checks against organization %s\n\n", len(checks), os.Getenv("ORG_ID"))
+		fmt.Fprintf(os.Stderr, "Running %d checks against organization %s\n", len(checks), os.Getenv("ORG_ID"))
+		if hostProjectID != "" {
+			fmt.Fprintf(os.Stderr, "Audit host project %s (%s)\n", hostProjectID, hostProjectNumber)
+		}
+		fmt.Fprintln(os.Stderr)
 	}
 	results := run(checks, *parallel, *timeout, !*quiet)
 	if !*quiet {
@@ -384,6 +453,8 @@ func parseDoc(path string, subs map[string]string) ([]check, error) {
 		}
 		if m := reBash.FindStringSubmatch(body); m != nil {
 			c.command = strings.TrimSpace(m[1])
+		} else if m := reManualSh.FindStringSubmatch(body); m != nil {
+			c.byHand = strings.TrimSpace(m[1])
 		}
 		if m := reCriteria.FindStringSubmatch(body); m != nil {
 			c.criteria = strings.TrimSpace(m[1])
@@ -397,7 +468,9 @@ func parseDoc(path string, subs map[string]string) ([]check, error) {
 		lc := strings.ToLower(c.criteria)
 		c.emptyPass = strings.HasPrefix(lc, "empty") && !strings.Contains(lc, "is a total fail")
 
-		if c.command == "" {
+		if c.byHand != "" {
+			// Run by hand; nothing to parse or substitute.
+		} else if c.command == "" {
 			// A cross-reference entry: no command, just "See V57 and V58."
 			for _, m := range reSeeRef.FindAllStringSubmatch(body, -1) {
 				c.refs = append(c.refs, m[1])
@@ -536,6 +609,7 @@ func resolveXrefs(results []result) {
 		if found {
 			results[i].v = worst
 			results[i].output = "inherited from " + strings.Join(from, ", ")
+			results[i].errText = results[i].output
 		}
 	}
 }
@@ -564,6 +638,10 @@ func run(checks []check, parallel int, timeout time.Duration, stream bool) []res
 			for i := range jobs {
 				c := checks[i]
 				switch {
+				case c.byHand != "":
+					results[i] = result{check: c, v: vReview,
+						output: "NOT RUN by audit-run — this command must be run by hand:\n\n" + c.byHand}
+					continue
 				case c.command == "":
 					results[i] = result{check: c, v: vXref, output: c.criteria}
 					continue
@@ -630,7 +708,7 @@ func execute(c check, timeout time.Duration) result {
 	r := result{
 		check:    c,
 		output:   strings.TrimSpace(stdout.String()),
-		errText:  strings.TrimSpace(stderr.String()),
+		errText:  strings.TrimSpace(reImpersonationNote.ReplaceAllString(stderr.String(), "")),
 		duration: time.Since(start),
 	}
 
@@ -641,14 +719,52 @@ func execute(c check, timeout time.Duration) result {
 	}
 
 	low := strings.ToLower(r.errText)
+
+	// A disabled API is reported by Google as PERMISSION_DENIED with reason
+	// SERVICE_DISABLED, so this must be tested before the permission case or
+	// every disabled API reads as a missing grant.
+	if strings.Contains(low, "service_disabled") || strings.Contains(low, "has not been used in project") ||
+		strings.Contains(low, "not enabled") {
+		api, proj, ok := disabledAPI(r.errText)
+		if ok && proj != "" && (proj == hostProjectNumber || proj == hostProjectID) {
+			// Disabled in the project that carries the audit's quota: that is
+			// a setup gap in the audit, not an absent product in the estate.
+			r.v = vError
+			r.errText = fmt.Sprintf("API DISABLED IN AUDIT HOST PROJECT: %s on %s — enable it there and re-run\n%s",
+				api, hostProjectID, r.errText)
+			return r
+		}
+		if ok {
+			r.errText = fmt.Sprintf("%s not enabled on project %s\n%s", api, proj, r.errText)
+		}
+		if r.output == "" {
+			r.v = vNA
+			return r
+		}
+		// Several checks run more than one command (functions, then Cloud Run).
+		// One product being absent must not discard what the others returned.
+		if c.emptyPass {
+			r.v = vFail
+		} else {
+			r.v = vReview
+		}
+		return r
+	}
+
 	switch {
 	case strings.Contains(low, "permission_denied"), strings.Contains(low, "permission denied"),
 		strings.Contains(low, "does not have permission"), strings.Contains(low, "caller does not have"):
 		r.v = vDenied
-	case strings.Contains(low, "not enabled"), strings.Contains(low, "service_disabled"),
-		strings.Contains(low, "has not been used in project"):
-		r.v = vNA
 	case err != nil && r.output == "":
+		r.v = vError
+		if r.errText == "" {
+			// Typically a trailing `grep` or `[ … ] &&` that matched nothing.
+			r.errText = fmt.Sprintf("%v, no output and nothing on stderr", err)
+		}
+	// bash runs without pipefail, so `gcloud … | jq …` exits 0 with empty
+	// output when gcloud fails. Empty output is only a PASS if nothing in the
+	// pipeline reported an error.
+	case c.emptyPass && r.output == "" && reToolError.MatchString(r.errText):
 		r.v = vError
 	case c.emptyPass:
 		if r.output == "" {
@@ -660,6 +776,17 @@ func execute(c check, timeout time.Duration) result {
 		r.v = vReview
 	}
 	return r
+}
+
+// cell renders the first line of s as a single markdown table cell. A raw
+// multi-line value breaks the row, and a "|" or backtick breaks the table.
+func cell(s string) string {
+	first, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	if first == "" {
+		return "—"
+	}
+	first = strings.ReplaceAll(first, "`", "'")
+	return "`" + strings.ReplaceAll(first, "|", `\|`) + "`"
 }
 
 func tally(rs []result) map[verdict]int {
@@ -881,7 +1008,18 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 		a.WriteString("## Problems\n\n| Check | Verdict | Detail |\n|---|---|---|\n")
 		for _, r := range rs {
 			if r.v == vDenied || r.v == vError {
-				fmt.Fprintf(&a, "| %s | %s | `%s` |\n", r.id, r.v.label(), trim(r.errText, 1))
+				fmt.Fprintf(&a, "| %s | %s | %s |\n", r.id, r.v.label(), cell(r.errText))
+			}
+		}
+		a.WriteString("\n")
+	}
+	// N/A is "not a failure" only if the reason really is an unused product.
+	// Without the reason, a reader can't tell that from a setup gap.
+	if t[vNA] > 0 {
+		a.WriteString("## Not applicable\n\n| Check | Reason |\n|---|---|\n")
+		for _, r := range rs {
+			if r.v == vNA {
+				fmt.Fprintf(&a, "| %s | %s |\n", r.id, cell(r.errText))
 			}
 		}
 		a.WriteString("\n")
