@@ -17,6 +17,9 @@ holds **no organization roles** and the audit APIs are **off**.
 | D5 | Output | **GCS bucket**, plus a summary printed to the operator's terminal |
 | D6 | Terraform state | The customer's existing state bucket by default; location configurable |
 | D7 | Code changes | Approved: host-project override, run-status wrapper, API preflight |
+| D8 | Hosting project | **Supplied by the customer.** Terraform uses it; never creates or deletes it |
+| D9 | Screen output | **Live progress while the jobs run, plus the end-of-run summary** |
+| D10 | Access scope | **Organization-level bindings, org pass then per-project passes** — the same model as today's manual audit |
 
 Rejected: unattended scheduling. Something would have to hold org IAM admin permanently to grant and
 revoke access, which is a worse standing privilege than the read-only auditor it replaces.
@@ -37,14 +40,14 @@ audit.sh        operator wrapper: apply access → run jobs → print summary �
 
 | Resource | Why permanent |
 |---|---|
-| Project (existing, or created — see V1) | Home for everything |
+| Project — **supplied by the customer**, referenced by `project_id`; Terraform does not create it | Home for everything |
 | APIs Terraform itself needs: `serviceusage`, `cloudresourcemanager`, `iam`, `run`, `artifactregistry`, `storage`, `logging` | Can't manage the rest without them |
 | Service account `cis-ig1-auditor` — **no roles** | An identity without bindings can do nothing. Recreating it each run would change its unique ID for no benefit |
 | 3 custom roles (`StorageReader`, `KeyReader`, `IapReader`) | **Can't be deleted and recreated weekly.** Role IDs stay reserved for up to ~37 days after deletion (BUG-001). A role definition grants nothing until it is bound |
 | Artifact Registry repository + image | The job container |
 | Results bucket — versioned, uniform access, public access prevention, retention (V8), readable only by `results_readers` | Findings name every public bucket and open firewall in the estate |
 | 3 Cloud Run Jobs: `audit-org`, `audit-projects`, `audit-rollup` | Job definitions grant nothing; they run as the SA, which has no roles yet |
-| `roles/run.invoker` on the jobs for `operators` | Who may start a run |
+| `roles/run.invoker` on the jobs, `roles/logging.viewer` on the project, for `operators` | Who may start a run and watch it |
 
 ### `infra/access` — per run
 
@@ -69,6 +72,7 @@ operator$ ./audit.sh [--projects projects.txt | --all]
   4. gcloud run jobs execute audit-org      --wait
   5. gcloud run jobs execute audit-projects --wait  --tasks=N  (sharded list)
   6. gcloud run jobs execute audit-rollup   --wait
+     (steps 4–6 stream live progress: audit.sh tails the execution's logs)
   7. print summary to screen, from the bucket
   8. terraform -chdir=infra/access destroy -auto-approve                (trap: runs on failure and Ctrl-C too)
 ```
@@ -137,6 +141,15 @@ CIS IG1 audit  run 20260917T140000Z  org 1234…  105 projects
 ```
 
 It also offers the `gcloud storage cat` command for `remediation-plan.md`.
+
+**Live progress (D9).** While each job runs, `audit.sh` polls Cloud Logging every 10 seconds for
+that execution's stdout (`resource.type="cloud_run_job"`,
+`labels."run.googleapis.com/execution_name"=<execution>`, newer than the last timestamp seen) and
+prints the new `[ n/ N] V55 FAIL …` lines, prefixed with the task index for the sharded job. It
+polls rather than using a streaming tail because `gcloud alpha logging tail` needs an extra gRPC
+library on the operator's machine. Lines may arrive a few seconds late and out of order across
+tasks; the final summary is authoritative. `--quiet` turns it off. Operators need
+`roles/logging.viewer` on the audit project, which `platform` grants to `operators`.
 
 ## Terraform state (D6)
 
@@ -207,8 +220,8 @@ The person running `audit.sh` needs what the grant requires, **only during the r
 6. Findings match a manual run of the same commit (same PASS/FAIL per check).
 7. `terraform destroy` on both modules leaves the project empty, apart from what `platform` was told to keep.
 
-## Open questions for the build
+## Resolved questions (2026-09-14)
 
-- **V1** Should `platform` **create** the dedicated project (needs `billing_account` and `folder_id` variables, plus project-creator rights), or take an existing `project_id`? The spec assumes an existing project, with creation optional.
-- **V2** Does "output to screen" mean the end-of-run summary only, or also live progress (tailing the job's logs during steps 4–6)?
-- **V3** Should access use **org** bindings with conditions (as specced), or folder-level bindings if some projects must be excluded from the audit entirely?
+- **V1** The customer supplies the project → D8.
+- **V2** Both live progress and the end-of-run summary → D9.
+- **V3** Organization-level bindings with an org pass and per-project passes, as today → D10.
