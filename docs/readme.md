@@ -14,6 +14,7 @@
 | See what benchmark work counts toward IG1 | [Benchmark contribution](cis-ig1-benchmark-overlap.md) |
 | Know which APIs to enable before running | [Required APIs](testing/required-apis.md) |
 | See what the live test run found and fixed | [Bug log](testing/bug-log.md) |
+| See the plan for running it automatically from a dedicated project | [Automated audit platform (spec)](design/automated-audit-platform.md) |
 
 ## How the checklist is marked
 
