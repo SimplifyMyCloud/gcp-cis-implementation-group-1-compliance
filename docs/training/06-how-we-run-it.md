@@ -16,14 +16,15 @@ export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
 go run audit-run.go -scope=org -org=$ORG_ID -pack ./audit-state/org
 ```
 
-67 checks. Results stream as they land:
+68 checks. Results stream as they land:
 
 ```
-Running 67 checks against organization 123456789012
+Running 83 checks against organization 123456789012
+Audit host project my-audit-project (123456789)
 
-  [  1/ 67] V43    REVIEW  4.1#2     Baseline enforced through org policy constraints
-  [  2/ 67] V27    PASS    3.3#1     No publicly accessible Cloud Storage buckets
-  [  3/ 67] V127   FAIL    8.2#2     Data Access audit logs enabled
+  [  1/ 68] V43    REVIEW  4.1#2     Baseline enforced through org policy constraints
+  [  2/ 68] V27    PASS    3.3#1     No publicly accessible Cloud Storage buckets
+  [  3/ 68] V55    FAIL    4.4#1     No firewall rules allowing the internet to SSH or R…
   ...
 ```
 
@@ -37,24 +38,24 @@ go run audit-run.go -scope=project -org=$ORG_ID \
   -project=$PROJECT -pack ./audit-state/projects/$PROJECT
 ```
 
-91 checks, against that project only. Repeat per project.
+90 checks, against that project only. Repeat per project.
 
 ---
 
 ## Running it live
 
-For a demo you do not want to wait for 67 checks. Pick four that hit different subsystems and finish in seconds:
+For a demo you do not want to wait for 68 checks. Pick four that hit different subsystems and finish in seconds:
 
 ```bash
 go run audit-run.go -scope=org -org=$ORG_ID \
-  -only V43,V27,V127,V181
+  -only V43,V27,V55,V181
 ```
 
 | | What it proves |
 |---|---|
 | `V43` | Org policy constraints — the whole enforcement story |
 | `V27` | Public buckets — the highest-severity finding class |
-| `V127` | Data Access logs — the most common real gap |
+| `V55` | SSH and RDP open to the internet — the finding that gets attention |
 | `V181` | Essential Contacts — the two-minute fix nobody does |
 
 To show the shape without touching the org at all:
@@ -63,7 +64,7 @@ To show the shape without touching the org at all:
 go run audit-run.go -list | head -20
 ```
 
-That prints every check and how it is classified — `runnable`, `review`, `needs PROJECT_ID`, `xref` — and runs nothing.
+That prints every check and how it is classified — `runnable`, `review`, `needs BACKUP_BUCKET`, `xref`, `by-hand` — and runs nothing.
 
 ---
 

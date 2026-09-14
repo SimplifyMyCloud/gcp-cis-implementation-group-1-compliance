@@ -17,8 +17,8 @@ How to validate a GCP Organization against CIS IG1 using the documents and scrip
 
 ## Two passes, in this order
 
-1. **Organization** — 67 checks, run once. The posture every project inherits.
-2. **Project** — 91 checks, run **once per project**, targeted explicitly.
+1. **Organization** — 68 checks, run once. The posture every project inherits.
+2. **Project** — 90 checks, run **once per project**, targeted explicitly.
 
 The organization pass goes first because its findings explain the project results. Within a project pass, every resource of the relevant kind is checked, and one non-compliant resource fails the requirement.
 
@@ -113,7 +113,7 @@ Every permission is read-only, including custom roles replacing predefined ones 
 ## Phase 2 — Establish the starting position
 
 ```bash
-gcloud resource-manager org-policies list --organization=$ORG_ID
+gcloud org-policies list --organization=$ORG_ID
 ```
 
 Empty or near-empty output means a **permissive-default** organization. Constraints you did not apply came from Google's security baseline, meaning **secure-by-default**.
@@ -126,7 +126,7 @@ Record it as Step 0 in the checklist. It determines how much of Controls 3, 4, 5
 
 ## Phase 3 — Smoke-test permissions
 
-Six checks, one per permission family. Cheaper to fail here than 188 checks later.
+Five organization checks, one per permission family. Cheaper to fail here than 188 checks later.
 
 Confirm impersonation is active:
 
@@ -137,20 +137,20 @@ gcloud config get-value auth/impersonate_service_account
 That must print the auditor service account. If it prints nothing, impersonation is not set and the smoke test proves nothing about the identity that will do the audit.
 
 ```bash
-go run audit-run.go -only V43,V27,V86,V91,V125,V181 -org="$ORG_ID"
+go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt
 ```
 
 Any `DENIED` is a missing grant on the **service account**. **Fix it and rerun before continuing** — on some checks a permission gap converts silently into a false `PASS`.
 
-- [ ] All six return something other than `DENIED`
+- [ ] All five return something other than `DENIED` or `ERROR`
 
 ---
 
-## Phase 4 — Gather the two values that cannot be discovered
+## Phase 4 — Gather the three values that cannot be discovered
 
 Checks discover their own resources. Where a safeguard concerns projects, Cloud SQL instances, GKE clusters, buckets, KMS keys or Cloud Routers, the command enumerates **every** one — because a requirement is met only when every resource meets it. One non-compliant instance out of ten fails the check, and the output names which one.
 
-Two values remain, because they depend on your naming rather than on anything queryable:
+Three values remain, because they depend on your naming rather than on anything queryable:
 
 ```bash
 go run audit-run.go -init-config ./audit-state/audit.env
@@ -160,8 +160,9 @@ go run audit-run.go -init-config ./audit-state/audit.env
 |---|---|
 | `BACKUP_BUCKET` | The bucket holding backups (6 checks) |
 | `TFSTATE_BUCKET` | The bucket holding Terraform state (1 check) |
+| `BACKUP_PROJECT` | The project holding isolated backup copies (2 checks) |
 
-**If either does not exist, write `none`, not blank.**
+**If one does not exist, write `none`, not blank.**
 
 Blank produces `SKIP`, which reads as "we could not check." `none` produces `FAIL`, which is the truth: an organization with no backup bucket has not skipped safeguard 11.3, it has failed it. Blank values quietly turn non-compliance into missing data, and that is how a finding disappears from a report.
 
@@ -186,10 +187,10 @@ done
 go run audit-run.go -scope=org -org="$ORG_ID" \
   -config ./audit-state/audit.env \
   -pack ./audit-state/org \
-  2>&1 | tee ./audit-state/org/run.log
+  2>&1 | tee ./audit-state/org-run.log
 ```
 
-67 checks. Read `01-automated-results.md` before starting the project passes — an org-level `DENIED` means the project passes will be unreliable too.
+68 checks. It exits non-zero whenever a check FAILs — that is findings, not a broken run. Read `01-automated-results.md` before starting the project passes — an org-level `DENIED` means the project passes will be unreliable too.
 
 - [ ] Organization pack produced
 - [ ] No `DENIED` remaining
@@ -218,7 +219,7 @@ Pick one from that list and export it. Everything below reads `$PROJECT`, so thi
 export PROJECT=<paste-a-projectId-from-the-list-above>
 ```
 
-Confirm it resolves before running 91 checks against a typo:
+Confirm it resolves before running 90 checks against a typo:
 
 ```bash
 gcloud projects describe "$PROJECT" --format="value(projectId,name,lifecycleState)"
@@ -235,7 +236,7 @@ go run audit-run.go -scope=project -org="$ORG_ID" -project="$PROJECT" \
   2>&1 | tee "./audit-state/projects/$PROJECT.log"
 ```
 
-91 checks. Repeat from **Set the project** for each entry in `projects.txt`.
+90 checks. Repeat from **Set the project** for each entry in `projects.txt`.
 
 To see which projects you have already covered:
 

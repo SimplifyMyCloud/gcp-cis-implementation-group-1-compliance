@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -101,10 +102,10 @@ type result struct {
 }
 
 var (
-	reCheck    = regexp.MustCompile(`(?m)^#### (V\d+)\s*$`)
-	reTitle    = regexp.MustCompile(`\*\*(.+?)\*\* · checklist ` + "`" + `([\d]+\.[\d]+#[\d]+)` + "`")
-	reScope    = regexp.MustCompile(`· scope: (org|project|xref)`)
-	reBash     = regexp.MustCompile("(?s)```bash\n(.*?)\n```")
+	reCheck = regexp.MustCompile(`(?m)^#### (V\d+)\s*$`)
+	reTitle = regexp.MustCompile(`\*\*(.+?)\*\* · checklist ` + "`" + `([\d]+\.[\d]+#[\d]+)` + "`")
+	reScope = regexp.MustCompile(`· scope: (org|project|xref)`)
+	reBash  = regexp.MustCompile("(?s)```bash\n(.*?)\n```")
 	// A ```sh block is shown to the auditor but never executed: it does
 	// something a read-only audit identity must not (e.g. SSH to an instance).
 	reManualSh = regexp.MustCompile("(?s)```sh\n(.*?)\n```")
@@ -1289,10 +1290,16 @@ func writeConfigTemplate(path string, checks []check) error {
 	for _, k := range keys {
 		fmt.Fprintf(&b, "# %s (%d check(s))\n%s=\n\n", discoverHint[k], count[k], k)
 	}
+	// The documented location is ./audit-state/audit.env, which doesn't exist
+	// on a fresh clone.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "wrote %s — %d placeholder(s)\n\nFill it in, then:\n  go run audit-run.go -config %s -pack ./audit\n",
+	fmt.Fprintf(os.Stderr, "wrote %s — %d placeholder(s)\n\nFill it in, then:\n"+
+		"  go run audit-run.go -scope=org -org=$ORG_ID -config %s -pack ./audit-state/org\n",
 		path, len(keys), path)
 	return nil
 }

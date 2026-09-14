@@ -15,7 +15,7 @@ Everything needed is in this directory. Nothing outside it is required to review
 
 ## What to do
 
-1. Read [what is granted](audit-service-account/readme.md#exactly-what-is-granted) — 35 roles, every one read-only
+1. Read [what is granted](audit-service-account/readme.md#exactly-what-is-granted) — 33 roles by default (35 with the two optional ones), every one read-only
 2. Run `terraform plan` and check the output matches
 3. `terraform apply`
 4. Verify in the Console using the checklist below
@@ -33,15 +33,15 @@ gcloud auth application-default login
 
 ```
 
-Edit `terraform.tfvars` — four values:
+Edit `terraform.tfvars` — replace the `REPLACE_*` values. Terraform refuses to plan until you do:
 
 ```hcl
 organization_id = "123456789012"
 host_project_id = "your-audit-project"
 auditor_principals = ["user:you@example.com"]
 
-enable_securitycenter = false   # true only where SCC is licensed
-enable_billing_viewer = true    # true if the billing account is inside this org
+enable_securitycenter = false   # true only where SCC is activated
+enable_billing_viewer = false   # optional — no check needs it
 ```
 
 Then:
@@ -52,7 +52,9 @@ terraform plan      # review — nothing is created yet
 terraform apply
 ```
 
-Expect around 40 resources: one service account, three custom roles, ~35 organization bindings, one impersonation grant.
+Expect **38 resources** with the defaults: one service account, three custom roles, 33 organization bindings (30 predefined + 3 custom), one impersonation grant. Each optional role adds one.
+
+New grants can take a minute or two to work — until then gcloud reports `Failed to impersonate`.
 
 ## Use
 
@@ -94,7 +96,7 @@ IAM & Admin → Service Accounts → select `cis-ig1-auditor` → **Keys** tab.
 
 IAM & Admin → IAM → set the resource selector to the **organization** → find `cis-ig1-auditor`.
 
-> Expected: around 35 roles, every name ending in `viewer`, `reader`, or `Viewer`, plus the three `cisIg1Audit…` custom roles.
+> Expected: 30 predefined roles (32 with the optional ones), every name ending in `viewer`, `reader`, `Viewer` or `browser`/`securityReviewer`, plus the three `cisIg1Audit…` custom roles.
 >
 > Then search for **your own** account in the same view. It should hold whatever it held before this module ran, and nothing new.
 

@@ -206,19 +206,30 @@ for i in "${!CUSTOM_IDS[@]}"; do
   id="${CUSTOM_IDS[$i]}"
   if gcloud iam roles describe "$id" --organization="$ORG_ID" >/dev/null 2>&1; then
     echo "  exists already — $id"
+  elif $DRY_RUN; then
+    echo "  [dry-run] would undelete $id if soft-deleted, otherwise create it"
   else
-    # A role deleted in the last 7 days is soft-deleted and must be undeleted
-    # rather than recreated; the ID stays reserved for 30 days.
+    # A role deleted in the last 7 days is soft-deleted and can be undeleted.
+    # After that it can't — yet its ID stays reserved until Google purges it
+    # (up to ~37 days), so create fails too. describe returns NOT_FOUND for
+    # both, which is why this tries undelete, then create, then explains.
     if gcloud iam roles undelete "$id" --organization="$ORG_ID" >/dev/null 2>&1; then
       echo "  undeleted    — $id (was soft-deleted from a previous audit)"
-    else
-      run gcloud iam roles create "$id" \
+    elif err=$(gcloud iam roles create "$id" \
         --organization="$ORG_ID" \
         --title="${CUSTOM_TITLES[$i]}" \
         --description="Read-only. Created for a CIS IG1 audit; removed at teardown." \
         --permissions="${CUSTOM_PERMS[$i]}" \
-        --stage=GA >/dev/null
-      $DRY_RUN || echo "  created      — $id"
+        --stage=GA 2>&1 >/dev/null); then
+      echo "  created      — $id"
+    else
+      echo "  FAILED       — $id" >&2
+      echo "$err" | sed 's/^/                 /' >&2
+      if [[ "$err" == *"marked for deletion"* ]]; then
+        echo "  This role ID is still reserved from an earlier teardown and can no longer be" >&2
+        echo "  undeleted. Re-run with a new prefix, e.g. --role-prefix ${ROLE_PREFIX}2" >&2
+      fi
+      exit 1
     fi
   fi
 done
@@ -231,7 +242,9 @@ bind() {
   local role="$1"
   # add-iam-policy-binding is additive and idempotent — it adds one member to
   # one role and leaves every other binding in the organization untouched.
-  if run gcloud organizations add-iam-policy-binding "$ORG_ID" \
+  if $DRY_RUN; then
+    echo "  [dry-run] would grant $role"
+  elif gcloud organizations add-iam-policy-binding "$ORG_ID" \
        --member="$SA_MEMBER" --role="$role" \
        --condition=None --quiet >/dev/null 2>&1; then
     echo "  ok      $role"
@@ -247,7 +260,9 @@ for c in "${CUSTOM_IDS[@]}"; do bind "organizations/${ORG_ID}/roles/${c}"; done
 echo
 echo "4/4  impersonation"
 for a in "${AUDITORS[@]}"; do
-  if run gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+  if $DRY_RUN; then
+    echo "  [dry-run] would let $a impersonate $SA_EMAIL"
+  elif gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
        --project="$PROJECT" \
        --member="$a" \
        --role="roles/iam.serviceAccountTokenCreator" \

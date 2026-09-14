@@ -78,7 +78,7 @@ When something fails, flip to **`cis-ig1-remediation-reference.md`** and look up
 Before working the checklist, determine whether this Organization is **permissive-default** or **secure-by-default** (see the overview document). It materially changes how much of Controls 3, 4, 5, 15, and 17 is already done.
 
 ```
-gcloud resource-manager org-policies list --organization=ORGANIZATION_ID
+gcloud org-policies list --organization=ORGANIZATION_ID
 ```
 
 - [ ] Existing org policy constraints listed and recorded

@@ -324,12 +324,11 @@ Binary Authorization evaluates images at **admission**. Pods already running whe
 **Find running workloads that would fail the policy**
 
 ```
-gcloud container clusters list --format="value(name,location)" | while read c loc; do
-  gcloud container clusters get-credentials "$c" --region="$loc" --quiet 2>/dev/null
-  kubectl get pods --all-namespaces \
-    -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.spec.containers[*].image}{"\n"}{end}' \
-    | grep -v "gcr.io/google-containers" | sed "s|^|$c / |"
-done
+gcloud asset search-all-resources --scope=organizations/ORGANIZATION_ID \
+  --asset-types=k8s.io/Pod --read-mask='*' --format=json \
+  | jq -r '.[] | .name as $n | .versionedResources[]?.resource as $p
+    | "\($n)\t\([$p.spec.containers[]?.image] | join(","))"' \
+  | grep -v "gcr.io/google-containers"
 ```
 
 Roll affected workloads after applying the policy, or they will run unattested until their next deployment.
@@ -659,7 +658,7 @@ resource "google_compute_firewall" "deny_all_ingress" {
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=sqladmin.googleapis.com/Instance \
-  --format=json \
+  --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.settings.ipConfiguration.ipv4Enabled == true)
            | "PUBLIC IP: \(.name)"'
 ```
@@ -670,7 +669,7 @@ gcloud asset search-all-resources \
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=sqladmin.googleapis.com/Instance \
-  --format=json \
+  --read-mask='*' --format=json \
   | jq -r '.[] | select([.versionedResources[]?.resource.settings.ipConfiguration.authorizedNetworks[]?.value]
            | index("0.0.0.0/0")) | "OPEN TO WORLD: \(.name)"'
 ```
@@ -681,10 +680,13 @@ gcloud asset search-all-resources \
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=compute.googleapis.com/Firewall \
-  --format=json \
-  | jq -r '.[] | select([.versionedResources[]?.resource.sourceRanges[]?] | index("0.0.0.0/0"))
-           | select([.versionedResources[]?.resource.allowed[]?.ports[]?]
-             | any(. == "22" or . == "3389" or . == "3306" or . == "5432" or . == "1433"))
+  --read-mask='*' --format=json \
+  | jq -r 'def covers($n): (split("-") | map(tonumber)) as $r | $r[0] <= $n and $n <= ($r[1] // $r[0]);
+           .[] | select([.versionedResources[]?.resource.sourceRanges[]?] | any(. == "0.0.0.0/0" or . == "::/0"))
+           | select([.versionedResources[]?.resource.allowed[]? | select(.IPProtocol == "all"
+               or ((.IPProtocol == "tcp" or .IPProtocol == "6")
+                   and ((.ports // []) | length == 0
+                        or any(covers(22) or covers(3389) or covers(3306) or covers(5432) or covers(1433)))))] | length > 0)
            | "OPEN: \(.name)"'
 ```
 
@@ -786,10 +788,16 @@ resource "google_container_cluster" "hardened" {
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=compute.googleapis.com/Instance \
-  --format=json \
-  | jq -r '.[] | select([.versionedResources[]?.resource.metadata.items[]?
-           | select(.key == "enable-oslogin" and (.value | ascii_upcase) == "TRUE")] | length == 0)
-           | "NO OS LOGIN: \(.name)"'
+  --read-mask='*' --format=json \
+  | jq -r --slurpfile projects <(gcloud asset search-all-resources --scope=organizations/ORGANIZATION_ID \
+      --asset-types=compute.googleapis.com/Project --read-mask='*' --format=json) '
+    def oslogin: [.[]? | select(.key == "enable-oslogin") | .value | ascii_upcase] | first;
+    ($projects[0] | map({key: .project,
+      value: ([.versionedResources[]?.resource.commonInstanceMetadata.items] | first | oslogin)})
+      | from_entries) as $proj
+    | .[] | ([.versionedResources[]?.resource.metadata.items] | first | oslogin) as $inst
+    | select(($inst // $proj[.project] // "FALSE") != "TRUE")
+    | "NO OS LOGIN: \(.name)"'
 ```
 
 **Find projects still carrying project-wide SSH keys**
@@ -808,7 +816,7 @@ done
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=compute.googleapis.com/Instance \
-  --format=json \
+  --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.networkInterfaces[]?.accessConfigs != null)
            | "EXTERNAL IP: \(.name)"'
 ```
@@ -819,7 +827,7 @@ gcloud asset search-all-resources \
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=compute.googleapis.com/Instance \
-  --format=json \
+  --read-mask='*' --format=json \
   | jq -r '.[] | select(.versionedResources[]?.resource.shieldedInstanceConfig.enableSecureBoot != true)
            | "NOT SHIELDED: \(.name)"'
 ```
@@ -892,7 +900,7 @@ done
 gcloud asset search-all-resources \
   --scope=organizations/ORGANIZATION_ID \
   --asset-types=compute.googleapis.com/Instance \
-  --format=json \
+  --read-mask='*' --format=json \
   | jq -r '.[] | select([.versionedResources[]?.resource.serviceAccounts[]?.email]
            | any(test("developer\\.gserviceaccount\\.com$")))
            | "DEFAULT SA IN USE: \(.name)"'

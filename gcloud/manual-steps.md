@@ -75,7 +75,7 @@ gcloud iam roles create "${PREFIX}IapReader" \
   --stage=GA
 ```
 
-> If a role already exists from a previous audit, `create` fails. Custom roles are soft-deleted for 7 days and their IDs stay reserved for 30 — use `gcloud iam roles undelete ROLE_ID --organization=$ORG_ID` instead, or change `PREFIX` in step 1.
+> If a role from a previous audit was deleted **within the last 7 days**, `create` fails — use `gcloud iam roles undelete ROLE_ID --organization=$ORG_ID` instead. **After 7 days** it can't be undeleted, but the ID stays reserved for up to ~37 days (`describe` returns NOT_FOUND, `create` fails with "marked for deletion"): change `PREFIX` in step 1.
 
 ---
 
@@ -149,7 +149,7 @@ gcloud organizations add-iam-policy-binding "$ORG_ID" \
   --condition=None --quiet
 ```
 
-**Billing** — only if the billing account lives inside this organization.
+**Billing** — optional. No check needs it: V7 reads each project's own billing info. Grant it only if you want billing-account visibility, and only if the billing account lives inside this organization.
 
 ```bash
 gcloud organizations add-iam-policy-binding "$ORG_ID" \
@@ -294,7 +294,7 @@ for ROLE in "${PREFIX}StorageReader" "${PREFIX}KeyReader" "${PREFIX}IapReader"; 
 done
 ```
 
-Custom roles are soft-deleted for 7 days and their IDs stay reserved for 30. That is normal — they purge themselves.
+Deleted custom roles can be undeleted for 7 days, and their IDs stay reserved for up to ~37. That is normal — they purge themselves. A new audit inside that window needs a different `PREFIX`.
 
 ### Delete the service account
 

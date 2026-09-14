@@ -52,8 +52,10 @@ EOF
 ORG_ID=$(grep '^ORG_ID=' "$RECORD" | cut -d= -f2)
 PROJECT=$(grep '^PROJECT=' "$RECORD" | cut -d= -f2)
 SA_EMAIL=$(grep '^SA_EMAIL=' "$RECORD" | cut -d= -f2)
-mapfile -t ROLES        < <(grep '^ROLE='        "$RECORD" | cut -d= -f2)
-mapfile -t CUSTOM_ROLES < <(grep '^CUSTOM_ROLE=' "$RECORD" | cut -d= -f2)
+# A read loop rather than mapfile: mapfile needs bash 4, and macOS ships 3.2.
+ROLES=(); CUSTOM_ROLES=()
+while IFS= read -r r; do ROLES+=("$r"); done < <(grep '^ROLE=' "$RECORD" | cut -d= -f2)
+while IFS= read -r r; do CUSTOM_ROLES+=("$r"); done < <(grep '^CUSTOM_ROLE=' "$RECORD" | cut -d= -f2)
 SA_MEMBER="serviceAccount:${SA_EMAIL}"
 
 echo
@@ -113,9 +115,9 @@ for c in "${CUSTOM_ROLES[@]}"; do
     echo "  skipped  $c (already gone)"
   fi
 done
-echo "  note: custom roles are soft-deleted for 7 days and their IDs stay"
-echo "        reserved for 30. Re-running create.sh inside that window will"
-echo "        undelete them rather than failing."
+echo "  note: custom roles can be undeleted for 7 days, but their IDs stay"
+echo "        reserved for up to ~37. create.sh undeletes them inside 7 days;"
+echo "        after that, re-run create.sh with a new --role-prefix."
 
 echo
 echo "3/3  service account"

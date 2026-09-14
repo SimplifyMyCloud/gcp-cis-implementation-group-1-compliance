@@ -17,6 +17,8 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 | [`docs/training/`](docs/training/) | 20-minute class for SREs. |
 | [`terraform/`](terraform/) | The read-only audit service account. |
 | [`gcloud/`](gcloud/) | Same account via shell scripts, where Terraform is unavailable. |
+| [`docs/testing/required-apis.md`](docs/testing/required-apis.md) | The 17 APIs the audit project needs, with evidence from a live run. |
+| [`docs/testing/bug-log.md`](docs/testing/bug-log.md) | What a live test run found and fixed. |
 
 ## The numbers
 
@@ -32,20 +34,29 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 
 ## Quick start
 
+Prerequisites: `go`, `jq`, gcloud with the `alpha` and `beta` components, Terraform, and the [17 APIs](docs/testing/required-apis.md#1-enable-in-the-audit-host-project--17-apis) enabled in the audit project.
+
 ```bash
 export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
 
 cd terraform/audit-service-account
+gcloud auth application-default login
+# edit terraform.tfvars — replace the REPLACE_* values
 terraform init && terraform apply
 eval "$(terraform output -raw impersonate_command)"
 
 cd ../..
-go run audit-run.go -scope=org -org=$ORG_ID -pack ./audit-state/org
-go run audit-run.go -scope=project -org=$ORG_ID -project=PROJECT -pack ./audit-state/projects/PROJECT
+go run audit-run.go -scope=org -org=$ORG_ID -init-config ./audit-state/audit.env
+# edit audit.env — BACKUP_BUCKET, TFSTATE_BUCKET, BACKUP_PROJECT (or none)
 
-go run rollup.go -in ./audit-state  # 105 packs → one remediation plan
+go run audit-run.go -scope=org -org=$ORG_ID -config ./audit-state/audit.env -pack ./audit-state/org
+go run audit-run.go -scope=project -org=$ORG_ID -project=PROJECT -config ./audit-state/audit.env -pack ./audit-state/projects/PROJECT
+
+go run rollup.go -in ./audit-state -out ./audit-state/remediation-plan.md -csv ./audit-state/remediation-plan.csv
 go run compliance-report.go        # score the checklist
 ```
+
+A healthy pass says `RUN STATUS: OK` at the top of `01-automated-results.md`. `audit-run.go` exits non-zero whenever a check FAILs — that means findings, not a broken run. Step-by-step: [run sheet](docs/cis-ig1-run-sheet.md).
 
 The audit runs as a read-only service account, impersonated never keyed — a key would breach safeguard 5.2, which this audit tests. `terraform destroy` removes every trace.
 

@@ -39,7 +39,7 @@ Run the organization pass first. It establishes the posture every project inheri
 
 The project pass targets one project per invocation. Within that project it enumerates **every** resource of the relevant kind: every Cloud SQL instance, every node pool, every KMS key, every bucket. A requirement is met only when every resource meets it — one non-compliant instance out of ten fails the check, and the output names which one.
 
-Only two values cannot be discovered, because they depend on your naming rather than on anything queryable: `BACKUP_BUCKET` and `TFSTATE_BUCKET`. Supply them with `-config`, or set them to `none` if they do not exist — which is a finding, not a skip.
+Only three values cannot be discovered, because they depend on your naming rather than on anything queryable: `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT`. Supply them with `-config`, or set them to `none` if they do not exist — which is a finding, not a skip.
 
 **Required roles.** Verified by running a representative check from each family against a live organization.
 

@@ -39,7 +39,7 @@ Google changed the default sometime around 2024. The exact date matters less tha
 #### Which one are you?
 
 ```
-gcloud resource-manager org-policies list --organization=ORGANIZATION_ID
+gcloud org-policies list --organization=ORGANIZATION_ID
 ```
 
 Empty or near-empty output indicates a permissive-default posture. A set of `iam.*`, `storage.*`, and `essentialcontacts.*` constraints you did not apply yourself indicates the baseline is present and active. **Run this before anything else** — it changes the size of the audit.

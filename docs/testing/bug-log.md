@@ -812,3 +812,187 @@ The test host project already had most of these enabled, which is how the gap st
 **Fix** — Both documents now enable the 17 measured APIs and explain the host/audited-project
 split. Verified: run 8 — both passes `RUN STATUS: OK`, 0 ERROR, 0 DENIED. Full evidence per API is in
 [`required-apis.md`](required-apis.md). Recommended: one confirmation run from an empty host project.
+
+---
+
+## Documentation pass — 2026-09-14
+
+Every relative link and anchor was checked, and every command block in the run sheet was executed.
+The `gcloud/` scripts ran a real create → verify → destroy → verify cycle under macOS's stock
+`/bin/bash` 3.2, with a throwaway account (`cis-ig1-docs-test`, prefix `cisIg1DocTest`) since
+deleted. Every read-only command in the remediation reference ran against the test org (26 blocks).
+
+## BUG-029 — Doc links break on GitHub: files committed as `README.md`, linked as `readme.md`
+
+| | |
+|---|---|
+| Found | 2026-09-14, link check against exact tracked filenames |
+| Component | `readme.md`, `docs/readme.md`, `docs/training/readme.md`, `terraform/audit-service-account/readme.md` |
+| Severity | broken links — work on macOS (case-insensitive disk), 404 on GitHub and Linux |
+
+**Error**
+
+```
+git ls-files: README.md  docs/README.md  docs/training/README.md  terraform/audit-service-account/README.md
+              gcloud/readme.md  terraform/readme.md
+gcloud/readme.md:5: ../terraform/audit-service-account/readme.md -> not a tracked path
+```
+
+**Cause** — Mixed case in git; every link uses lowercase.
+
+**Fix** — The four files renamed to `readme.md` in git (GitHub still renders it as the folder page).
+Link and anchor check: 0 problems.
+
+## BUG-030 — Smoke test in the run sheet, runbook and scripted audit refuses to run
+
+| | |
+|---|---|
+| Found | 2026-09-14, run sheet A7 executed |
+| Component | `docs/cis-ig1-run-sheet.md` A7, `docs/cis-ig1-audit-runbook.md` Phase 3, `docs/cis-ig1-scripted-audit.md` |
+| Severity | blocks run — the first `go run` in the procedure exits |
+
+**Error**
+
+```
+$ go run audit-run.go -only V43,V27,V86,V91,V125,V181 -org="$ORG_ID"
+audit-run: -scope is required.
+```
+
+**Cause** — `-scope` became mandatory; the smoke test predates it. It also mixed V91 (project
+scope) into what can only be an org-scope run.
+
+**Fix** — `go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt`
+(five org checks). Verified: 5 checks, 0 DENIED. The training demo had the same mix-up (V127 in
+an org run silently ran 3 of 4); V55 substituted and verified. Legacy
+`gcloud resource-manager org-policies list` replaced by `gcloud org-policies list` in five places.
+Check counts 67/91 → 68/90 and "two values" → three (adds `BACKUP_PROJECT`) throughout.
+
+## BUG-031 — `create.sh --dry-run` is not dry, and reports grants it never made
+
+| | |
+|---|---|
+| Found | 2026-09-14, `gcloud/create.sh --dry-run` |
+| Component | `gcloud/create.sh` |
+| Severity | safety — a dry run can undelete roles; its output claims success |
+
+**Error**
+
+```
+2/4  custom roles
+                       (nothing printed)
+3/4  organization role bindings
+  ok      roles/browser         (dry run — nothing was granted)
+```
+
+**Cause** — `gcloud iam roles undelete` ran directly, outside the `run` dry-run wrapper. The
+wrapper's "[dry-run]" line was sent to `/dev/null` with the command's output, and the wrapper
+returns success, so every binding printed `ok`. In a real run, role creation failures aborted
+without explanation, including the 7–37-day "marked for deletion" case (BUG-001).
+
+**Fix** — Dry run skips undelete/create/grant entirely and prints `[dry-run] would …`. Role
+creation captures the error and, for "marked for deletion", tells the operator to re-run with
+`--role-prefix`. Verified: dry run prints 33 would-grant lines and writes no record; real run
+created the account, 3 roles and 33 bindings.
+
+## BUG-032 — `destroy.sh` fails on macOS: `mapfile: command not found`
+
+| | |
+|---|---|
+| Found | 2026-09-14, compatibility check under `/bin/bash` 3.2 |
+| Component | `gcloud/destroy.sh` |
+| Severity | blocks teardown — with `set -e` the script exits before revoking anything |
+
+**Error**
+
+```
+$ /bin/bash -c 'mapfile -t X < <(echo a)'
+/bin/bash: mapfile: command not found
+```
+
+**Cause** — `mapfile` is bash 4+. macOS ships bash 3.2, and this machine has no other bash.
+
+**Fix** — Arrays filled with `while read` loops. Its closing note about role IDs corrected too.
+Verified: under `/bin/bash` 3.2, destroy revoked 33 bindings, deleted 3 roles and the account;
+"no organization bindings remain".
+
+## BUG-033 — `verify.sh` after teardown reports deleted custom roles as present
+
+| | |
+|---|---|
+| Found | 2026-09-14, `verify.sh` after `destroy.sh` |
+| Component | `gcloud/verify.sh` section 5 |
+| Severity | wrong result — teardown looks incomplete |
+
+**Error**
+
+```
+5  custom role permissions
+   cisIg1DocTestKeyReader
+      iam.serviceAccountKeys.list        (role was deleted)
+```
+
+**Cause** — `gcloud iam roles describe` keeps returning a role for days after deletion, with
+`deleted: True`; the script only treated "not found" as gone.
+
+**Fix** — Reads `deleted` too and prints "soft-deleted (correct after teardown)". Verified after
+destroy; a live role still prints its permissions.
+
+## BUG-034 — `-init-config` fails on a fresh clone
+
+| | |
+|---|---|
+| Found | 2026-09-14, following the quick start |
+| Component | `audit-run.go` — `writeConfigTemplate()` |
+| Severity | blocks run — documented first command fails where `./audit-state` doesn't exist |
+
+**Error**
+
+```
+audit-run: open ./audit-state/audit.env: no such file or directory
+```
+
+**Cause** — The template writer didn't create its directory; only the run sheet has a `mkdir`.
+Its closing hint also suggested a command with no `-scope` (which fails, see BUG-030).
+
+**Fix** — Creates the parent directory; hint now reads
+`go run audit-run.go -scope=org -org=$ORG_ID -config … -pack ./audit-state/org`. Verified into a
+non-existent directory.
+
+## BUG-035 — Remediation reference repeats the check bugs fixed earlier
+
+| | |
+|---|---|
+| Found | 2026-09-14, remediation reference review and execution |
+| Component | `docs/cis-ig1-remediation-reference.md` "find what already exists" queries |
+| Severity | wrong result — the queries engineers use to scope a fix returned nothing |
+
+**Error** — seven Asset Inventory queries without `--read-mask` (BUG-005), exact-port firewall
+matching (BUG-017), instance-only OS Login (BUG-018), and a `kubectl` loop that rewrote the
+operator's kubeconfig with `--region` (BUG-011). After rewriting, one query failed on execution:
+
+```
+jq: error: syntax error, unexpected INVALID_CHARACTER … line 6, column 110
+```
+
+**Cause** — Commands copied from the checks before those were fixed. The jq error was an extra
+closing parenthesis in the rewrite.
+
+**Fix** — Same fixes as the checks; parenthesis corrected. Verified: all 26 read-only command
+blocks run without error. The open-ports query finds 14 rules, including the three fixtures.
+
+## BUG-036 — Committed `terraform.tfvars` targeted the test organization
+
+| | |
+|---|---|
+| Found | 2026-09-14, documentation pass |
+| Component | `terraform/audit-service-account/terraform.tfvars` |
+| Severity | safety — an unedited clone would apply the audit identity to the wrong organization |
+
+**Cause** — The test run's real values (org `933250405420`, `simplifymycloud-dev`, prefix
+`cisIg1Audit2`) were committed in BUG-001.
+
+**Fix** — Restored `REPLACE_*` placeholders, with the prefix line commented. `terraform plan` now
+stops with "organization_id must be the numeric ID only". Test-org values moved to
+`scratch/test-org.tfvars`; the live test identity is still managed with
+`terraform plan -var-file=../../scratch/test-org.tfvars` (No changes). Terraform readme counts
+corrected: 33 roles and 38 resources by default, not "35" and "around 40".

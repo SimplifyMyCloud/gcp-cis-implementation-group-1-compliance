@@ -26,7 +26,8 @@ Add `--dry-run` first to see exactly what it will do without changing anything.
 |---|---|
 | `--auditor` | Repeatable — one per person or group who may impersonate |
 | `--enable-scc` | Adds `securitycenter.adminViewer`. Off by default; the binding fails where SCC is not licensed |
-| `--enable-billing` | Adds `billing.viewer` at the org node. Only useful if the billing account lives in this organization |
+| `--enable-billing` | Adds `billing.viewer` at the org node. Optional — no check needs it |
+| `--sa-name` / `--role-prefix` | Change the account ID or custom role prefix — needed when re-auditing within ~37 days of a teardown |
 | `--dry-run` | Change nothing |
 
 ### It writes a record — keep it
@@ -93,11 +94,15 @@ Three are custom roles, each replacing a predefined role that carries a write ve
 
 ## Known edges
 
-**Custom roles are soft-deleted for 7 days** and their IDs stay reserved for 30. Re-running `create.sh` inside that window undeletes them rather than failing.
+**Custom role IDs outlive the roles.** Within 7 days of a teardown, `create.sh` undeletes them. After that they can't be undeleted, but the IDs stay reserved for up to ~37 days — `create.sh` stops with "marked for deletion" and tells you to re-run with `--role-prefix`.
+
+**New grants take a minute or two.** Straight after `create.sh`, impersonation can fail with `Failed to impersonate`. Wait and retry.
 
 **`securitycenter.adminViewer` fails without an SCC licence.** Expected — leave `--enable-scc` off.
 
-**Re-running `create.sh` is safe.** It reuses an existing account, undeletes soft-deleted roles, and IAM bindings are idempotent.
+**Re-running `create.sh` is safe.** It reuses an existing account, undeletes recently deleted roles, and IAM bindings are idempotent. `--dry-run` changes nothing, not even an undelete.
+
+**Plain macOS bash works.** The scripts run on bash 3.2, which is what macOS ships.
 
 ## Keeping this in step with the Terraform
 

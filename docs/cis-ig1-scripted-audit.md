@@ -8,6 +8,7 @@ For the full engagement including teardown and reporting, follow the [runbook](c
 
 ```bash
 go version && jq --version          # jq is required, not optional
+gcloud components list --filter="id:(alpha beta)" --format="value(id,state.name)"   # both installed
 export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
 export AUDIT_PROJECT=<project carrying API quota>
 ```
@@ -26,10 +27,10 @@ gcloud config get-value auth/impersonate_service_account   # must print the SA
 
 ```bash
 cd ../..
-go run audit-run.go -only V43,V27,V86,V91,V125,V181 -org="$ORG_ID"
+go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt
 ```
 
-Six checks, one per permission family. Any `DENIED` is a missing grant — fix and rerun before continuing, because on some checks a permission gap becomes a false `PASS`.
+Five organization checks, one per permission family. Any `DENIED` is a missing grant — fix and rerun before continuing, because on some checks a permission gap becomes a false `PASS`.
 
 ## Config
 
@@ -37,18 +38,18 @@ Six checks, one per permission family. Any `DENIED` is a missing grant — fix a
 go run audit-run.go -init-config ./audit-state/audit.env
 ```
 
-Two values only: `BACKUP_BUCKET` and `TFSTATE_BUCKET`. Everything else is discovered.
+Three values only: `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT`. Everything else is discovered.
 
-**If either does not exist, write `none`, not blank.** Blank gives `SKIP` ("could not check"); `none` gives `FAIL`, which is the truth — no backup bucket is safeguard 11.3 failing.
+**If one does not exist, write `none`, not blank.** Blank gives `SKIP` ("could not check"); `none` gives `FAIL`, which is the truth — no backup bucket is safeguard 11.3 failing.
 
 ## Run
 
 ```bash
-# Organization — 67 checks, once. Always first.
+# Organization — 68 checks, once. Always first.
 go run audit-run.go -scope=org -org="$ORG_ID" \
   -config ./audit-state/audit.env -pack ./audit-state/org
 
-# Project — 91 checks, once per project
+# Project — 90 checks, once per project
 gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt
 export PROJECT=<pick one>
 go run audit-run.go -scope=project -org="$ORG_ID" -project="$PROJECT" \

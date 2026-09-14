@@ -7,10 +7,10 @@ Replaces the `gcloud` provisioning and revoke loop in phases 1 and 11 of the aud
 ## For the customer, in short
 
 - The auditor is granted **one** permission, and it is not on your organization: the right to impersonate a single service account.
-- That service account holds **35 roles, all read-only.** It cannot create, modify, delete or invoke anything, cannot read object contents, and cannot read secret values.
+- That service account holds **33 roles by default (35 with the two optional ones), all read-only.** It cannot create, modify, delete or invoke anything, cannot read object contents, and cannot read secret values.
 - **No credential file is ever created.** Impersonation issues a token that expires within the hour.
 - **Every action is attributable to a named human** through the delegation chain in your audit logs, and every impersonation is recorded in Admin Activity logs, which cannot be disabled.
-- **`terraform destroy` removes everything** — the account, all 35 bindings, the custom roles, the impersonation grant.
+- **`terraform destroy` removes everything** — the account, every binding, the custom roles, the impersonation grant.
 
 Detail for each of these is below: [what is granted](#exactly-what-is-granted) · [how impersonation works](#how-impersonation-works-and-what-the-auditor-can-do) · [what is logged](#everything-the-auditor-does-is-logged) · [teardown](#verifying-teardown)
 
@@ -56,7 +56,7 @@ There is no `write` or `read-write` row in this table, and that is the point —
 | **READ** | `roles/accesscontextmanager.policyReader` | VPC Service Controls perimeters and access levels | 3, 6 |
 | **READ** | `roles/artifactregistry.reader` | Artifact Registry repository contents and scan findings | 2 |
 | **READ** | `roles/bigquery.metadataViewer` | Dataset and table metadata — expiration and encryption settings | 3 |
-| **READ** | `roles/billing.viewer` | Which projects are attached to a billing account | 1 |
+| **READ** | `roles/billing.viewer` *(optional, off by default — no check needs it)* | Billing account details | 1 |
 | **READ** | `roles/binaryauthorization.policyViewer` | Binary Authorization admission policy | 2 |
 | **READ** | `roles/browser` | Project, folder and organization names and lifecycle state | 1, 3, 4, 5, 11, 15 |
 | **READ** | `roles/cloudasset.viewer` | Cloud Asset Inventory — resource configuration and IAM policies org-wide | 1, 2, 3, 4, 5, 6, 8, 10, 11, 15 |
@@ -82,7 +82,7 @@ There is no `write` or `read-write` row in this table, and that is the point —
 | **READ** | `roles/recommender.iamViewer` | IAM Recommender over-grant findings | 5 |
 | **READ** | `roles/run.viewer` | Cloud Run service configuration | 2 |
 | **READ** | `roles/secretmanager.viewer` | Secret names and rotation schedules | 5 |
-| **READ** | `roles/securitycenter.adminViewer` | Security Command Center settings and findings | 7 |
+| **READ** | `roles/securitycenter.adminViewer` *(optional — `enable_securitycenter`)* | Security Command Center settings and findings | 7 |
 | **READ** | `roles/serviceusage.serviceUsageViewer` | Which APIs are enabled on a project | 3, 4, 7 |
 | **READ** | `roles/spanner.viewer` | Spanner instances and backups | 11 |
 | **READ** | `IapReader` *(custom)* | Identity-Aware Proxy session settings | 4 |

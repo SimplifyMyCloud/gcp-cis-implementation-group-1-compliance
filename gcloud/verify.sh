@@ -88,10 +88,14 @@ echo
 echo "5  custom role permissions"
 while read -r c; do
   [[ -z "$c" ]] && continue
-  PERMS=$(gcloud iam roles describe "$c" --organization="$ORG_ID" \
-          --format="value(includedPermissions)" 2>/dev/null || echo "ABSENT")
-  if [[ "$PERMS" == "ABSENT" ]]; then
+  # describe still returns a role for days after deletion, flagged deleted=True.
+  INFO=$(gcloud iam roles describe "$c" --organization="$ORG_ID" \
+          --format="value[separator='|'](deleted,includedPermissions)" 2>/dev/null || echo "ABSENT")
+  PERMS="${INFO#*|}"
+  if [[ "$INFO" == "ABSENT" ]]; then
     echo "   $c — absent (correct after teardown)"
+  elif [[ "$INFO" == True\|* ]]; then
+    echo "   $c — soft-deleted (correct after teardown)"
   else
     echo "   $c"
     echo "      $PERMS"

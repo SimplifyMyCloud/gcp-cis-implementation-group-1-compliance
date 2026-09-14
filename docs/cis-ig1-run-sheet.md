@@ -23,7 +23,10 @@ echo "org=$ORG_ID  project=$AUDIT_PROJECT"
 
 ```bash
 go version && jq --version && gcloud version | head -1
+gcloud components list --filter="id:(alpha beta)" --format="value(id,state.name)"
 ```
+
+`alpha` and `beta` must not say `Not Installed` — 7 checks use them. Install with `gcloud components install alpha beta`.
 
 ## A3. Snapshot enabled APIs, then enable
 
@@ -56,6 +59,8 @@ comm -13 ./audit-state/apis-before.txt ./audit-state/apis-after.txt \
 
 ## A4. Create the audit service account
 
+As yourself — impersonation is not on yet. Add `--dry-run` first to see every grant without changing anything. Terraform does the same job: [`terraform/`](../terraform/readme.md).
+
 ```bash
 cd gcloud
 ./create.sh --org-id "$ORG_ID" --project "$AUDIT_PROJECT" \
@@ -72,26 +77,28 @@ gcloud config get-value auth/impersonate_service_account
 
 Must print the service account. `gcloud auth list` will still show *your* address — that is correct.
 
+A new impersonation grant can take a minute or two to work. Until it does, commands fail with `Failed to impersonate`.
+
 ## A6. Prove it is read-only
 
 ```bash
 gcloud iam service-accounts create throwaway-check --project="$AUDIT_PROJECT"
 ```
 
-`PERMISSION_DENIED` is the **correct** result. If it succeeds, impersonation is not active — delete the account and redo A5.
+The **correct** result is an error naming the audit account: `[cis-ig1-auditor@…] does not have permission`. If it says `Failed to impersonate`, the grant from A4 hasn't propagated — wait a minute and retry. If it succeeds, impersonation is not active — delete the account and redo A5.
 
 ## A7. Smoke test
 
 ```bash
-go run audit-run.go -only V43,V27,V86,V91,V125,V181 -org="$ORG_ID"
+go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt
 ```
 
-Any `DENIED` — stop, fix the grant, re-run. Do not continue.
+Five organization checks, one per permission family. Any `DENIED` or `ERROR` — stop, fix, re-run. Do not continue. (V86 writes `./audit-state/iam-inventory.txt`.)
 
 ## A8. Starting position
 
 ```bash
-gcloud resource-manager org-policies list --organization="$ORG_ID"
+gcloud org-policies list --organization="$ORG_ID"
 ```
 
 Empty means permissive-default. Record it as Step 0 in the checklist.
@@ -110,7 +117,7 @@ gcloud projects list --format="value(projectId)" | while read -r p; do
 done
 ```
 
-Edit `./audit-state/audit.env`. **If a bucket does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
+Edit `./audit-state/audit.env` — three values: `BACKUP_BUCKET`, `TFSTATE_BUCKET`, `BACKUP_PROJECT`. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
 
 ## A10. Organization pass
 
@@ -120,6 +127,8 @@ go run audit-run.go -scope=org -org="$ORG_ID" \
   -pack ./audit-state/org \
   2>&1 | tee ./audit-state/org-run.log
 ```
+
+The command exits non-zero whenever any check FAILs — that is findings, not a broken run. The run's health is the status line below.
 
 ## A11. Read the run status
 
@@ -268,14 +277,14 @@ Expected: empty, empty, `NOT_FOUND`.
 **Organization**
 
 - [ ] A1 variables set
-- [ ] A2 go, jq, gcloud present
+- [ ] A2 go, jq, gcloud, gcloud alpha/beta present
 - [ ] A3 `apis-enabled-by-audit.txt` written
 - [ ] A4 service account created
 - [ ] A5 impersonation active
 - [ ] A6 write attempt denied
 - [ ] A7 smoke test, no DENIED
 - [ ] A8 starting position recorded
-- [ ] A9 `audit.env` filled, non-existent buckets set to `none`
+- [ ] A9 `audit.env` filled, anything non-existent set to `none`
 - [ ] A10 org pass complete
 - [ ] A11 run status OK
 - [ ] A12 project list captured
