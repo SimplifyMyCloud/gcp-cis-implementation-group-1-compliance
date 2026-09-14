@@ -691,3 +691,35 @@ Check [V147](cis-ig1-cli-validation.md#v147) · … [how to fix](cis-ig1-remedia
 
 **Fix** — Link prefix computed with `filepath.Rel` from the plan's directory to `docs/`. Verified:
 `-out scratch/remediation-plan.md` produces `../docs/cis-ig1-cli-validation.md#v147`.
+
+## BUG-025 — Project checks loop over every project in the org but query the same project N times
+
+| | |
+|---|---|
+| Found | 2026-09-13, API request metrics for run 4 |
+| Component | `docs/cis-ig1-cli-validation.md` — V42, V83, V84, V160 |
+| Check | V42, V83, V84, V160 |
+| Severity | wrong result + cost — duplicated output ×N projects, N× API calls, errors hidden; V83 wrong flag, V160 missed regional keys |
+
+**Error** — API metrics for the audit SA during one project pass of `iq9-gcp-dev-yamato`:
+
+```
+sqladmin.googleapis.com   calls=41  List
+cloudkms.googleapis.com   calls=18  403 ListKeyRings
+$ gcloud kms keyrings list --location=global --project=iq9-gcp-dev-yamato
+ERROR: … Google Cloud KMS API has not been used in project 168357744801 before or it is disabled.
+```
+
+**Cause** — Each check wrapped a `$PROJECT_ID` query in `gcloud projects list | while read -r p`,
+left over from an all-projects version. With 18 projects, every call ran 18 times against the
+same project, and V42/V84 printed each result 18 times. `2>/dev/null` everywhere turned the
+disabled KMS API into empty "clean" output (REVIEW) instead of N/A. V83 used `--region` for
+clusters whose location may be a zone. V160 only listed key rings in `global`.
+
+**Fix** — Outer loops removed; `2>/dev/null` removed so errors reach the verdict logic. V83 uses
+`--location`. V42 reads both values in one `describe` with an explicit `|` separator (a first
+attempt with tab-splitting shifted soft-delete into the versioning column when versioning was
+unset — caught in verification). V160 now uses one Asset Inventory call,
+`search-all-iam-policies --scope=projects/$PROJECT_ID --asset-types=cloudkms.googleapis.com/CryptoKey`,
+covering every location. Verified: V42 `versioning=off soft_delete=604800` (matches
+`gcloud storage buckets describe`); V84 lists `yamato-dev` users once; V160 empty (no keys); V83 N/A (GKE API off).

@@ -683,14 +683,13 @@ See V37 and V38 — both must return empty.
 **Soft delete and versioning retention accounted for** · checklist `3.5#2` · scope: project
 
 ```bash
-# Every bucket — one non-compliant bucket fails the requirement
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read -r b; do
-    v=$(gcloud storage buckets describe "gs://$b" --format="value(versioning.enabled)" 2>/dev/null)
-    sd=$(gcloud storage buckets describe "gs://$b" \
-      --format="value(soft_delete_policy.retentionDurationSeconds)" 2>/dev/null)
-    echo "$p / $b  versioning=${v:-off}  soft_delete=${sd:-none}"
-  done
+# Every bucket in the project — one non-compliant bucket fails the requirement
+gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read -r b; do
+  gcloud storage buckets describe "gs://$b" \
+    --format="value[separator='|'](versioning.enabled,soft_delete_policy.retentionDurationSeconds)" \
+    | while IFS='|' read -r v sd; do
+        echo "$PROJECT_ID / $b  versioning=${v:-off}  soft_delete=${sd:-none}"
+      done
 done
 ```
 
@@ -1244,15 +1243,13 @@ See V81.
 **Default GKE node service account replaced or scoped** · checklist `4.7#7` · scope: project
 
 ```bash
-# Every node pool in every cluster
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud container clusters list --project="$PROJECT_ID" --format="value(name,location)" 2>/dev/null \
+# Every node pool in every cluster in the project (zonal and regional)
+gcloud container clusters list --project="$PROJECT_ID" --format="value(name,location)" \
   | while read -r c loc; do
-      gcloud container node-pools list --cluster="$c" --region="$loc" --project="$PROJECT_ID" \
-        --format="value(name,config.serviceAccount)" 2>/dev/null \
+      gcloud container node-pools list --cluster="$c" --location="$loc" --project="$PROJECT_ID" \
+        --format="value(name,config.serviceAccount)" \
         | awk -v c="$c" '$2=="default" {print "DEFAULT NODE SA: " c " / " $1}'
     done
-done
 ```
 
 **Pass:** No node pool shows "default".
@@ -1262,12 +1259,10 @@ done
 **Cloud SQL default database users reviewed** · checklist `4.7#8` · scope: project
 
 ```bash
-# Every Cloud SQL instance, in every project
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud sql instances list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read -r i; do
-    echo "== $p / $i"
-    gcloud sql users list --instance="$i" --project="$PROJECT_ID" --format="table(name,host,type)" 2>/dev/null
-  done
+# Every Cloud SQL instance in the project
+gcloud sql instances list --project="$PROJECT_ID" --format="value(name)" | while read -r i; do
+  echo "== $PROJECT_ID / $i"
+  gcloud sql users list --instance="$i" --project="$PROJECT_ID" --format="table(name,host,type)"
 done
 ```
 
@@ -2380,18 +2375,11 @@ gcloud storage buckets describe gs://BACKUP_BUCKET \
 **KMS key access separated from production identities** · checklist `11.3#2` · scope: project · needs `jq`
 
 ```bash
-# Every KMS key in every project
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud kms keyrings list --location=global --project="$PROJECT_ID" --format="value(name)" 2>/dev/null \
-  | while read -r ring; do
-      gcloud kms keys list --keyring="$ring" --location=global --project="$PROJECT_ID" \
-        --format="value(name)" 2>/dev/null | while read -r k; do
-          echo "== $k"
-          gcloud kms keys get-iam-policy "$k" --format=json 2>/dev/null \
-            | jq -r '.bindings[]?.members[]?'
-        done
-    done
-done
+# Every KMS key in the project, in every location, and who holds which role on it.
+# One Asset Inventory call instead of keyrings × locations × keys.
+gcloud asset search-all-iam-policies --scope=projects/$PROJECT_ID \
+  --asset-types=cloudkms.googleapis.com/CryptoKey --format=json \
+  | jq -r '.[] | .resource as $k | .policy.bindings[]? | "\($k)\t\(.role)\t\(.members | join(","))"'
 ```
 
 **Pass:** No production workload service account appears.
