@@ -277,7 +277,7 @@ Several checks iterate every project. A role held on only some projects makes th
 
 **`roles/securitycenter.adminViewer` fails where SCC is not licensed.** Set `enable_securitycenter = false`.
 
-**Billing accounts often sit outside the audited organization.** `enable_billing_viewer` grants `roles/billing.viewer` at the org node, which only helps if the billing account lives there. Otherwise grant it directly on the billing account:
+**No check needs `roles/billing.viewer`.** V7 reads each project's own billing info (`gcloud billing projects describe`), which works without any role on the billing account. `enable_billing_viewer` remains for operators who want billing-account visibility; billing accounts often sit outside the audited organization, where the org-node grant does nothing, so grant it on the billing account instead:
 
 ```bash
 gcloud billing accounts add-iam-policy-binding BILLING_ACCOUNT_ID \

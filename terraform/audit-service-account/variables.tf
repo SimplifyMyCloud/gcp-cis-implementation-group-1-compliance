@@ -65,12 +65,9 @@ variable "enable_securitycenter" {
 
 variable "enable_billing_viewer" {
   description = <<-EOT
-    Grant billing.viewer at the organization node, needed by the check for
-    projects with no billing account attached.
-
-    Billing accounts frequently sit outside the organization being audited. If
-    that is the case here, leave this false and grant billing.viewer directly on
-    the billing account instead — see README.
+    Grant billing.viewer at the organization node. Optional: no check needs it.
+    V7 (projects with no billing account) reads each project's own billing info,
+    which resourcemanager.projects.get already allows.
   EOT
   type        = bool
   default     = false

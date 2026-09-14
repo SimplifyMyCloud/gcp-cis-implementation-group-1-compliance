@@ -196,12 +196,12 @@ gcloud compute shared-vpc organizations list-host-projects $ORG_ID
 gcloud projects list --filter="lifecycleState:DELETE_REQUESTED" \
   --format="table(projectId,createTime)"
 
-# Projects with no billing account attached, across every billing account
-gcloud projects list --format="value(projectId)" | sort -u > /tmp/all-projects.txt
-gcloud billing accounts list --format="value(name)" 2>/dev/null | while read -r ba; do
-  gcloud beta billing projects list --billing-account="$ba" --format="value(projectId)" 2>/dev/null
-done | sort -u > /tmp/billed-projects.txt
-comm -23 /tmp/all-projects.txt /tmp/billed-projects.txt | sed 's|^|NO BILLING ACCOUNT: |' 
+# Billing attached to the project under audit? Reads the project's own billing
+# info, so it needs no role on the billing account — which usually sits outside
+# the organization, where listing billing accounts returns nothing.
+enabled=$(gcloud billing projects describe "$PROJECT_ID" --format="value(billingEnabled)") \
+  || { echo "BILLING STATUS UNREADABLE: $PROJECT_ID"; exit 0; }
+if [ "$enabled" != "True" ]; then echo "NO BILLING ACCOUNT: $PROJECT_ID"; fi
 ```
 
 **Pass:** First command empty, or every result has a recorded disposition.
@@ -1273,12 +1273,14 @@ See V47 and V51.
 **Full IAM principal inventory** · checklist `5.1#1` · scope: org
 
 ```bash
-# Written into audit-state/ rather than the working directory: this file is
-# the organization's complete IAM inventory and must not land in a repo.
-mkdir -p ./audit-state
+# Written into the audit pack (audit-run.go sets AUDIT_PACK_DIR from -pack),
+# not the working directory: this file is the organization's complete IAM
+# inventory and belongs with the rest of the evidence.
+out="${AUDIT_PACK_DIR:-./audit-state}"
+mkdir -p "$out"
 gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
-  --format="table(resource,policy.bindings.role)" > ./audit-state/iam-inventory.txt
-wc -l ./audit-state/iam-inventory.txt
+  --format="table(resource,policy.bindings.role)" > "$out/iam-inventory.txt"
+wc -l "$out/iam-inventory.txt"
 ```
 
 **Pass:** Inventory produced and retained as evidence.
@@ -2553,7 +2555,8 @@ done
 
 ```bash
 # Projects belonging to this organization
-gcloud projects list --format="value(projectId)" | sort -u > /tmp/org-projects.txt
+org_projects=$(mktemp)
+gcloud projects list --format="value(projectId)" | sort -u > "$org_projects"
 
 # Every service account holding a binding, resolved back to its owning project
 gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json \
@@ -2569,7 +2572,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json
         *.gserviceaccount.com) continue ;;                                      # Google-managed
         *) echo "NON-GCP IDENTITY: $res  $sa"; continue ;;
       esac
-      grep -qx "$proj" /tmp/org-projects.txt || echo "EXTERNAL SA: $res  $sa"
+      grep -qx "$proj" "$org_projects" || echo "EXTERNAL SA: $res  $sa"
     done
 ```
 

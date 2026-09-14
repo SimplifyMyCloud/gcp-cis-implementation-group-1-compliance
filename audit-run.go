@@ -354,6 +354,16 @@ func main() {
 		return
 	}
 
+	// Checks that write evidence files (V86's IAM inventory) put them in the
+	// pack, not in whatever directory the operator happened to run from.
+	if *pack != "" {
+		if err := os.MkdirAll(*pack, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "audit-run: %v\n", err)
+			os.Exit(2)
+		}
+		os.Setenv("AUDIT_PACK_DIR", *pack)
+	}
+
 	resolveHostProject()
 	if !*quiet {
 		fmt.Fprintf(os.Stderr, "Running %d checks against organization %s\n", len(checks), os.Getenv("ORG_ID"))

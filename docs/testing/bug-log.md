@@ -396,3 +396,61 @@ splitting the table row. N/A results carried their reason in `errText` but it wa
 **Fix** — New `cell()` renders the first line only, escaping `|` and backticks. The pack gains a
 "Not applicable" table naming the disabled API and project for each N/A; cross-references carry
 "inherited from …". Verified run 3.
+
+## BUG-015 — V7 reports every project in the organization as "NO BILLING ACCOUNT"
+
+| | |
+|---|---|
+| Found | 2026-09-13, project pass (run 3) |
+| Component | `docs/cis-ig1-cli-validation.md` — V7; Terraform `enable_billing_viewer` docs |
+| Check | V7 |
+| Severity | wrong result — 18 false findings, including the project under audit |
+
+**Error**
+
+```
+V7  NO BILLING ACCOUNT: gen-lang-client-0690825234
+    NO BILLING ACCOUNT: iq9-gcp-dev-yamato
+    … all 18 projects
+$ gcloud billing projects describe iq9-gcp-dev-yamato   (as the audit SA)
+billingAccountName: billingAccounts/000000-000002-6D3BF8
+billingEnabled: true
+```
+
+**Cause** — The check listed billing accounts, then projects per account, and subtracted. The
+audit SA can't list billing accounts (the billing account isn't in the organization, and
+`billing.viewer` is off by default), and `2>/dev/null` hid that — so "billed projects" was always
+empty and every project was reported unbilled. It also enumerated the whole org inside a
+single-project pass.
+
+**Fix** — V7 now runs `gcloud billing projects describe "$PROJECT_ID"
+--format="value(billingEnabled)"`, which needs only `resourcemanager.projects.get` (already
+granted), and prints `BILLING STATUS UNREADABLE` rather than a false finding if the read fails.
+`roles/billing.viewer` is therefore needed by no check; `variables.tf` and the module readme say so.
+Verified: V7 on `iq9-gcp-dev-yamato` returns no billing finding.
+
+## BUG-016 — V86 writes the org's full IAM inventory into the current directory, outside the pack
+
+| | |
+|---|---|
+| Found | 2026-09-13, org pass (run 3) |
+| Component | `docs/cis-ig1-cli-validation.md` — V86, V175; `audit-run.go` |
+| Check | V86 (also V175 `/tmp` collision) |
+| Severity | evidence handling — a 24 KB org-wide IAM inventory appeared untracked at the repo root |
+
+**Error**
+
+```
+$ git status --short
+?? audit-state/
+$ ls audit-state
+iam-inventory.txt      # run used -pack ./scratch/audit-state/org
+```
+
+**Cause** — V86 hard-coded `./audit-state/iam-inventory.txt`, relative to wherever the operator
+ran from, ignoring `-pack`. V175 (and old V7) wrote fixed names in `/tmp`, so two passes running
+at once overwrite each other's project list.
+
+**Fix** — `audit-run.go` creates the `-pack` directory up front and exports `AUDIT_PACK_DIR`;
+V86 writes to `${AUDIT_PACK_DIR:-./audit-state}`. V175 uses `mktemp`. Verified: org run with
+`-pack scratch/tmp-pack-o` puts `iam-inventory.txt` in the pack; nothing written at repo root.
