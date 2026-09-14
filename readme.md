@@ -80,6 +80,8 @@ scratch/runs/2026-09-14_12-58-20/
     audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
 ```
 
+`--skip V96` leaves out a check (reported as SKIP) and `--parallel 1` runs checks one at a time, in order. Projects whose ID matches `EXCLUDE_PROJECTS` in `audit.env` are never audited — default `^sys-`, the projects Apps Script creates; they are listed in `evidence/excluded.txt`.
+
 Runs go to `./scratch/runs/` (git-ignored) by default; `--out ./audit-state/runs` keeps them in the repository. It exits non-zero only if a pass is `UNRELIABLE` or `DEGRADED`.
 
 A healthy pass says `RUN STATUS: OK` at the top of `01-automated-results.md`. `audit-run.go` exits non-zero whenever a check FAILs — that means findings, not a broken run. Step-by-step: [run sheet](docs/cis-ig1-run-sheet.md).

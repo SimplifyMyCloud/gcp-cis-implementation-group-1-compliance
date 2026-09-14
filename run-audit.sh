@@ -18,6 +18,7 @@
 #       targets.txt                   projects audited
 #       run.log                       full console output
 #       iam-inventory.txt             V86
+#       excluded.txt                  projects skipped by EXCLUDE_PROJECTS (default ^sys-)
 #
 #   ./run-audit.sh --config audit.env                       # organization only
 #   ./run-audit.sh --config audit.env --project my-proj     # org + one project (repeatable)
@@ -43,14 +44,20 @@ Projects (default: organization pass only)
   --all              Audit every ACTIVE project in the organization.
 
 Options
+  --skip V96,V44     Checks NOT to run (reported as SKIP). Use for a check that hangs.
+  --parallel N       Checks run at once (default 8). --parallel 1 runs them in order.
   --org ID           Organization ID (default: $ORG_ID)
   --out DIR          Where run directories are created (default: ./scratch/runs)
   --no-org           Skip the organization pass (project passes only)
   -h, --help         This message
+
+Projects whose ID matches EXCLUDE_PROJECTS in the config are never audited
+(default ^sys-, the projects Apps Script creates; set EXCLUDE_PROJECTS=none to
+audit everything). They are listed in evidence/excluded.txt.
 USAGE
 }
 
-CONFIG="" ORG="${ORG_ID:-}" OUT="./scratch/runs" PROJECTS_FILE="" ALL=false DO_ORG=true
+CONFIG="" ORG="${ORG_ID:-}" OUT="./scratch/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,6 +68,8 @@ while [[ $# -gt 0 ]]; do
     --org)      ORG="$2"; shift 2 ;;
     --out)      OUT="$2"; shift 2 ;;
     --no-org)   DO_ORG=false; shift ;;
+    --skip)     SKIP="$2"; shift 2 ;;
+    --parallel) PARALLEL="$2"; shift 2 ;;
     -h|--help)  usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
@@ -72,6 +81,11 @@ die() { echo "run-audit: $*" >&2; exit 2; }
 [[ -n "$CONFIG" ]] || die "--config is required (create one: go run audit-run.go -init-config audit.env)"
 [[ -f "$CONFIG" ]] || die "config not found: $CONFIG"
 [[ -z "$PROJECTS_FILE" || -f "$PROJECTS_FILE" ]] || die "projects file not found: $PROJECTS_FILE"
+[[ "$PARALLEL" =~ ^[1-9][0-9]*$ ]] || die "--parallel must be a positive number"
+
+# Same default and meaning as audit-run.go: ^sys- unless the config says otherwise.
+EXCLUDE=$(grep -E '^[[:space:]]*EXCLUDE_PROJECTS=' "$CONFIG" | tail -1 | cut -d= -f2- | tr -d "\"'" | sed 's/[[:space:]]*$//' || true)
+EXCLUDE="${EXCLUDE:-^sys-}"
 
 # Resolve the operator's relative paths before moving to the repository root,
 # which audit-run.go needs to find docs/cis-ig1-cli-validation.md.
@@ -108,16 +122,27 @@ if [[ -n "$PROJECTS_FILE" ]]; then
   done < "$PROJECTS_FILE"
 fi
 : > "$EVIDENCE/targets.txt"
+: > "$EVIDENCE/excluded.txt"
 if [[ ${#PROJECTS[@]} -gt 0 ]]; then
-  printf '%s\n' "${PROJECTS[@]}" | sort -u > "$EVIDENCE/targets.txt"
+  printf '%s\n' "${PROJECTS[@]}" | sort -u > "$RUN/.candidates"
+  if [[ "$EXCLUDE" == [Nn][Oo][Nn][Ee] ]]; then
+    cp "$RUN/.candidates" "$EVIDENCE/targets.txt"
+  else
+    grep -vE -- "$EXCLUDE" "$RUN/.candidates" > "$EVIDENCE/targets.txt" || true
+    grep -E -- "$EXCLUDE" "$RUN/.candidates" | sed "s|\$|  (matches EXCLUDE_PROJECTS $EXCLUDE)|" > "$EVIDENCE/excluded.txt" || true
+  fi
+  rm -f "$RUN/.candidates"
 fi
+EXCLUDED_COUNT=$(grep -c . "$EVIDENCE/excluded.txt" || true)
 TARGET_COUNT=$(grep -c . "$EVIDENCE/targets.txt" || true)
 
 IMPERSONATING=$(gcloud config get-value auth/impersonate_service_account 2>/dev/null || true)
 echo "CIS IG1 audit  run $RUN_ID"
 echo "  organization  $ORG"
 echo "  identity      ${IMPERSONATING:-$(gcloud config get-value account 2>/dev/null) (NOT impersonating)}"
-echo "  projects      $TARGET_COUNT"
+echo "  projects      $TARGET_COUNT audited, $EXCLUDED_COUNT excluded (EXCLUDE_PROJECTS $EXCLUDE)"
+[[ -n "$SKIP" ]] && echo "  skipping      $SKIP"
+echo "  parallel      $PARALLEL"
 echo "  output        $RUN/"
 echo
 
@@ -142,7 +167,9 @@ pass_summary() {  # $1 label, $2 pack file
 
 run_pass() {  # args passed to audit-run.go
   set +e
-  go run audit-run.go -org="$ORG" -config "$CONFIG" "$@"
+  local extra=(-parallel "$PARALLEL")
+  [[ -n "$SKIP" ]] && extra+=(-skip "$SKIP")
+  go run audit-run.go -org="$ORG" -config "$CONFIG" "${extra[@]}" "$@"
   local rc=$?
   set -e
   [[ $rc -le 1 ]] || { echo "run-audit: audit-run exited $rc — stopping" >&2; exit $rc; }
@@ -198,6 +225,7 @@ if [[ -d "$PACKS/projects" ]]; then
 fi
 rm -rf "$PACKS"
 rmdir "$REPORT/02-organization" "$REPORT/03-projects" 2>/dev/null || true
+[[ -s "$EVIDENCE/excluded.txt" ]] || rm -f "$EVIDENCE/excluded.txt"
 if [[ ${#NOT_FOUND[@]} -gt 0 ]]; then
   printf '%s\n' "${NOT_FOUND[@]}" > "$EVIDENCE/not-found.txt"
 fi
@@ -210,6 +238,8 @@ echo "================================================================"
 echo "CIS IG1 audit  run $RUN_ID"
 [[ ${#STATUS_LINES[@]} -gt 0 ]] && printf '%s\n' "${STATUS_LINES[@]}"
 echo "  remediation plan  $FINDINGS distinct finding(s)"
+[[ $EXCLUDED_COUNT -gt 0 ]] && echo "  excluded          $EXCLUDED_COUNT project(s) matching $EXCLUDE — see evidence/excluded.txt"
+[[ -n "$SKIP" ]] && echo "  checks skipped    $SKIP (reported as SKIP)"
 [[ ${#NOT_FOUND[@]} -gt 0 ]] && echo "  not found         ${NOT_FOUND[*]}"
 echo
 echo "Read:  $REPORT/"

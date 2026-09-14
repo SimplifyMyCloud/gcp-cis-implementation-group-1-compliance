@@ -117,7 +117,7 @@ gcloud projects list --format="value(projectId)" | while read -r p; do
 done
 ```
 
-Edit `./audit-state/audit.env` — three values: `BACKUP_BUCKET`, `TFSTATE_BUCKET`, `BACKUP_PROJECT`. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
+Edit `./audit-state/audit.env` — three values: `BACKUP_BUCKET`, `TFSTATE_BUCKET`, `BACKUP_PROJECT`. It also carries `EXCLUDE_PROJECTS=^sys-`: projects matching it (Apps Script's `sys-…` projects by default) are never audited; `none` audits everything. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
 
 ## A9a. Shortcut — the whole audit in one command
 
@@ -144,7 +144,7 @@ scratch/runs/2026-09-14_12-58-20/
     audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
 ```
 
-`--project ID` (repeatable) or `--all` instead of `--projects`. Projects that don't exist or can't be seen are listed as `not found` and skipped. The summary at the end shows every pass's `RUN STATUS`.
+`--project ID` (repeatable) or `--all` instead of `--projects`. A check hanging? `--skip V96` leaves it out (reported as SKIP); `--parallel 1` runs checks one at a time so the stuck one is obvious. Every check also has a 3-minute timeout (`-timeout` on `audit-run.go`). Projects that don't exist or can't be seen are listed as `not found` and skipped. The summary at the end shows every pass's `RUN STATUS`.
 
 ## A10. Organization pass
 

@@ -1423,14 +1423,17 @@ gcloud secrets list --project="$PROJECT_ID" \
 **Human account activity assessed** · checklist `5.3#2` · scope: org
 
 ```bash
+# Bounded: an unbounded 90-day read of a large organization's audit logs pages
+# for hours. The most recent 5,000 org-level entries name the active humans;
+# a complete 90-day picture comes from the Workspace / Cloud Identity login report.
 DOMAIN=$(gcloud organizations describe $ORG_ID --format="value(displayName)")
 gcloud logging read \
-  'protoPayload.authenticationInfo.principalEmail:"@$DOMAIN"' \
-  --organization=$ORG_ID --freshness=90d \
+  "protoPayload.authenticationInfo.principalEmail:\"@${DOMAIN}\"" \
+  --organization=$ORG_ID --freshness=90d --limit=5000 \
   --format="value(protoPayload.authenticationInfo.principalEmail)" | sort -u
 ```
 
-**Pass:** Compare against your IAM inventory; principals absent here are dormant.
+**Pass:** Compare against your IAM inventory (V86). A principal absent here made no org-level call in the most recent 5,000 entries — confirm dormancy in the Workspace login report before acting.
 
 #### V97
 

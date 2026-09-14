@@ -1017,3 +1017,82 @@ absolute paths.
 
 **Fix** — Both paths made absolute before `Rel`. Verified with an absolute and a relative `-out`:
 both produce `../../docs/…` from two levels down.
+
+---
+
+## Customer-org findings — 2026-09-14
+
+First run against a large organization (105 projects), during a live demo.
+
+## BUG-038 — V96 hangs the organization pass: an unbounded 90-day log read
+
+| | |
+|---|---|
+| Found | 2026-09-14, org pass stalled at 61/68 on a 105-project organization |
+| Component | `docs/cis-ig1-cli-validation.md` — V96 |
+| Severity | blocks run — the org pass never finishes |
+
+**Error** — no error; the progress counter stopped. The last check to finish was V183, but the one
+running was V96:
+
+```
+gcloud logging read 'protoPayload.authenticationInfo.principalEmail:"@$DOMAIN"' \
+  --organization=$ORG_ID --freshness=90d --format=… | sort -u
+```
+
+**Cause** — No `--limit`, so gcloud pages through 90 days of the organization's audit log. That took
+seconds in the test organization and hours in a large one. The filter was also in single quotes,
+so `$DOMAIN` was never substituted: the read matched nothing and the check was useless even
+when it finished.
+
+**Fix** — Double-quoted filter so the domain is filled in; `--limit=5000` (most recent entries); pass
+criterion now says to confirm dormancy in the Workspace login report. Verified in the test organization:
+22 s, returns `chris@simplifymy.cloud` (previously empty). No other `logging read` check is unbounded.
+
+## BUG-039 — The per-check timeout never stops a hung check
+
+| | |
+|---|---|
+| Found | 2026-09-14, same stall — the 3-minute timeout didn't fire |
+| Component | `audit-run.go` — `execute()` |
+| Severity | blocks run — any slow gcloud call hangs the whole pass |
+
+**Error** — reproduced with a check `sleep 600 \| sort -u` and `-timeout 5s`: before the fix the run
+never returned.
+
+**Cause** — `exec.CommandContext` kills only `bash` on timeout. Its child (`gcloud`, or here `sleep`)
+keeps the output pipe open, and `cmd.Run()` waits for the pipe to close. First flagged by the static
+review on 2026-09-13; not reproduced until a large organization.
+
+**Fix** — Each check runs in its own process group (`Setpgid`). On timeout the whole group is
+killed, and `WaitDelay` stops waiting on the pipes 5 s later. Verified: the check reports
+`ERROR · timed out after 5s`, the run completes in 9 s, and no child process survives.
+*Note:* process groups are Unix-only, so the scripts run on macOS, Linux and Cloud Shell, not native Windows.
+
+## BUG-040 — No way to leave Apps Script `sys-` projects out, or to skip one hung check
+
+| | |
+|---|---|
+| Found | 2026-09-14, customer organization |
+| Component | `audit-run.go`, `run-audit.sh` |
+| Severity | blocks run — `sys-` projects inflate `--all` and can't be excluded; a hung check can only be bypassed by editing the doc |
+
+**Cause** — Apps Script creates a `sys-<number>` project per script, under `system-gsuite/apps-script`.
+They are real projects in the organization, so `--all` and project lists included them. There was
+also no skip option and no way to set parallelism through `run-audit.sh`.
+
+**Fix**
+
+- `EXCLUDE_PROJECTS` (regex; default `^sys-`; `none` disables), read from `-config`/`-set`/environment.
+  - `run-audit.sh` filters `--all`, `--projects` and `--project` with it, writes `evidence/excluded.txt`, and shows the count.
+  - `audit-run.go -scope=project` refuses an excluded project (exit 2).
+  - `-init-config` writes the line.
+- `audit-run.go -skip V96,…` / `run-audit.sh --skip`: those checks are reported as SKIP ("the operator excluded this check with -skip"), not silently dropped. The console summary says "N CHECKS NOT RUN — excluded with -skip" instead of asking for placeholder values.
+- `run-audit.sh --parallel N` passes through to `-parallel`.
+
+Verified under `/bin/bash` 3.2: a list of `iq9-gcp-dev-yamato` + `sys-12345678901234567890123456`
+with `--skip V96 --parallel 4` gave 1 audited, 1 excluded (recorded with reason), V96 SKIP, both passes
+`RUN STATUS: OK`, 51 findings. `audit-run.go -project=sys-…` is refused with the pattern named.
+
+**Still open (awaiting decision)** — organization checks that query every project at once through
+Cloud Asset Inventory (32 of 68) still include `sys-` projects in their results.

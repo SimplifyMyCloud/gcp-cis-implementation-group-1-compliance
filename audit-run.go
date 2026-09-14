@@ -41,6 +41,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -79,6 +80,7 @@ type check struct {
 	absent     []string // placeholders the operator declared non-existent
 	refs       []string // for xrefs: the checks this one defers to
 	byHand     string   // command the auditor runs manually (```sh block); never executed
+	skipped    bool     // excluded by the operator with -skip; reported, never run
 }
 
 // manualItem is a requirement with no CLI check: either a GCP task that must
@@ -187,6 +189,7 @@ func main() {
 	var (
 		docPath   = flag.String("doc", "docs/cis-ig1-cli-validation.md", "validation document to parse")
 		only      = flag.String("only", "", "comma-separated V-numbers to run (e.g. V27,V30)")
+		skip      = flag.String("skip", "", "comma-separated V-numbers NOT to run (e.g. V96); reported as SKIP")
 		list      = flag.Bool("list", false, "list checks without running them")
 		parallel  = flag.Int("parallel", 8, "concurrent gcloud invocations")
 		timeout   = flag.Duration("timeout", 3*time.Minute, "per-check timeout")
@@ -278,6 +281,11 @@ func main() {
 				"    gcloud projects list --format=\"value(projectId)\"")
 			os.Exit(2)
 		}
+		if pattern, re := excludePattern(subs); re != nil && re.MatchString(*project) {
+			fmt.Fprintf(os.Stderr, "audit-run: project %s matches EXCLUDE_PROJECTS (%s) — not audited.\n"+
+				"  Set EXCLUDE_PROJECTS=none in the config to audit it anyway.\n", *project, pattern)
+			os.Exit(2)
+		}
 		subs["PROJECT_ID"] = *project
 		// Most project checks read the project from the shell, not from a
 		// placeholder: `--project="$PROJECT_ID"` is deliberately not substituted
@@ -327,6 +335,18 @@ func main() {
 			}
 		}
 		checks = f
+	}
+	if *skip != "" {
+		// Skipped checks stay in the report as SKIP, so a reader sees what was
+		// deliberately not run rather than finding it silently missing.
+		for _, id := range strings.Split(*skip, ",") {
+			id = strings.ToUpper(strings.TrimSpace(id))
+			for i := range checks {
+				if checks[i].id == id {
+					checks[i].skipped = true
+				}
+			}
+		}
 	}
 
 	// Resolve placeholders BEFORE running anything. A value the operator can
@@ -677,6 +697,9 @@ func run(checks []check, parallel int, timeout time.Duration, stream bool) []res
 			for i := range jobs {
 				c := checks[i]
 				switch {
+				case c.skipped:
+					results[i] = result{check: c, v: vSkip, errText: "not run: excluded with -skip"}
+					continue
 				case c.byHand != "":
 					results[i] = result{check: c, v: vReview,
 						output: "NOT RUN by audit-run — this command must be run by hand:\n\n" + c.byHand}
@@ -735,6 +758,13 @@ func execute(c check, timeout time.Duration) result {
 
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, "bash", "-c", c.command)
+	// On timeout, killing bash alone leaves gcloud running with the output
+	// pipe open, and Run() waits for it indefinitely. Run each check in its
+	// own process group, kill the whole group, and stop waiting on the pipes
+	// shortly after.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 5 * time.Second
 	// Without this, a check against a disabled API blocks forever on gcloud's
 	// interactive "enable and retry? (y/N)" prompt.
 	cmd.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
@@ -860,6 +890,9 @@ func why(r result) string {
 	case vNA:
 		return firstErr + " — the product isn't in use here, so the requirement doesn't apply."
 	case vSkip:
+		if r.skipped {
+			return "the operator excluded this check with -skip, so it was not run. Its requirement is unverified until it runs."
+		}
 		return firstErr + ". Add it to the `-config` file (or set it to `none` if it doesn't exist) and re-run."
 	case vDenied:
 		return "the audit identity is missing a permission, so this result can't be trusted: " + firstErr
@@ -872,6 +905,28 @@ func why(r result) string {
 		return "this requirement is scored by another check that didn't run in this pass — see " + strings.Join(r.refs, ", ") + " in the other pass."
 	}
 	return ""
+}
+
+// excludePattern returns the EXCLUDE_PROJECTS regular expression — from -config
+// or -set, else the environment, else ^sys- (the projects Apps Script creates,
+// which belong in no audit). "none" turns exclusion off.
+func excludePattern(subs map[string]string) (string, *regexp.Regexp) {
+	pattern := subs["EXCLUDE_PROJECTS"]
+	if pattern == "" {
+		pattern = os.Getenv("EXCLUDE_PROJECTS")
+	}
+	if pattern == "" {
+		pattern = "^sys-"
+	}
+	if strings.EqualFold(pattern, "none") {
+		return pattern, nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "audit-run: EXCLUDE_PROJECTS %q is not a valid regular expression: %v\n", pattern, err)
+		os.Exit(2)
+	}
+	return pattern, re
 }
 
 // cell renders the first line of s as a single markdown table cell. A raw
@@ -943,23 +998,28 @@ func renderText(w *os.File, rs []result, showAll bool) {
 		if t[vSkip] == 1 {
 			plural = "CHECK"
 		}
-		fmt.Fprintf(w, "%s\nTO RESOLVE THE %d SKIPPED %s\n\n", strings.Repeat("-", 72), t[vSkip], plural)
-		for _, k := range keys {
-			unit := "checks"
-			if need[k] == 1 {
-				unit = "check"
+		// Checks excluded with -skip need no value; only list real placeholders.
+		if len(keys) == 0 {
+			fmt.Fprintf(w, "%s\n%d %s NOT RUN — excluded with -skip\n\n", strings.Repeat("-", 72), t[vSkip], plural)
+		} else {
+			fmt.Fprintf(w, "%s\nTO RESOLVE THE %d SKIPPED %s\n\n", strings.Repeat("-", 72), t[vSkip], plural)
+			for _, k := range keys {
+				unit := "checks"
+				if need[k] == 1 {
+					unit = "check"
+				}
+				fmt.Fprintf(w, "  %-22s unblocks %d %s\n", k, need[k], unit)
 			}
-			fmt.Fprintf(w, "  %-22s unblocks %d %s\n", k, need[k], unit)
-		}
-		fmt.Fprintf(w, "\n  go run audit-run.go \\\n")
-		for i, k := range keys {
-			cont := " \\"
-			if i == len(keys)-1 {
-				cont = ""
+			fmt.Fprintf(w, "\n  go run audit-run.go \\\n")
+			for i, k := range keys {
+				cont := " \\"
+				if i == len(keys)-1 {
+					cont = ""
+				}
+				fmt.Fprintf(w, "    -set %s=<value>%s\n", k, cont)
 			}
-			fmt.Fprintf(w, "    -set %s=<value>%s\n", k, cont)
+			fmt.Fprintln(w)
 		}
-		fmt.Fprintln(w)
 	}
 
 	if t[vDenied] > 0 {
@@ -1362,6 +1422,9 @@ func writeConfigTemplate(path string, checks []check) error {
 	for _, k := range keys {
 		fmt.Fprintf(&b, "# %s (%d check(s))\n%s=\n\n", discoverHint[k], count[k], k)
 	}
+	b.WriteString("# Projects never audited — a regular expression matched against the project ID.\n")
+	b.WriteString("# ^sys- skips the projects Apps Script creates. Set to none to audit everything.\n")
+	b.WriteString("EXCLUDE_PROJECTS=^sys-\n")
 	// The documented location is ./audit-state/audit.env, which doesn't exist
 	// on a fresh clone.
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
