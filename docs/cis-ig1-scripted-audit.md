@@ -62,7 +62,7 @@ Within a project, every resource of the relevant kind is checked. One non-compli
 
 ## Output
 
-Each pack is three files: `01-automated-results.md` (the table), `02-manual-cli.md` (30 console tasks), `03-manual-process.md` (72 process requirements).
+Each pack is three files: `01-automated-results.md` (the results table, then a **Detail** block for every check in V-number order — verdict, pass criterion, why it got that verdict, output, and the command), `02-manual-cli.md` (30 console tasks), `03-manual-process.md` (72 process requirements). Project packs have only the first.
 
 | Verdict | Meaning |
 |---|---|

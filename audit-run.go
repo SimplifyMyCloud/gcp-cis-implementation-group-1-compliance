@@ -817,6 +817,63 @@ func execute(c check, timeout time.Duration) result {
 	return r
 }
 
+// why explains, in one sentence, how a check reached its verdict.
+func why(r result) string {
+	firstErr, _, _ := strings.Cut(strings.TrimSpace(r.errText), "\n")
+	lines := 0
+	if r.output != "" {
+		lines = strings.Count(r.output, "\n") + 1
+	}
+	plural := "s"
+	if lines == 1 {
+		plural = ""
+	}
+
+	// A cross-reference has no command of its own; its verdict is inherited.
+	if r.command == "" && r.byHand == "" && r.v != vXref {
+		return "this requirement has no command of its own — it takes the verdict of the check it refers to (" + r.output + ")."
+	}
+
+	switch r.v {
+	case vPass:
+		return "the command ran cleanly and returned no output, which is the pass criterion."
+	case vFail:
+		switch {
+		case len(r.absent) > 0:
+			return "you declared " + strings.Join(r.absent, ", ") + " as `none`. A resource that doesn't exist can't meet the requirement, so this is a finding rather than a skip."
+		case firstErr != "":
+			return fmt.Sprintf("empty output would pass, and the command returned %d line%s — each names something that doesn't meet the criterion above. Part of the command couldn't run (see stderr): %s", lines, plural, firstErr)
+		default:
+			return fmt.Sprintf("empty output would pass, and the command returned %d line%s — each names something that doesn't meet the criterion above.", lines, plural)
+		}
+	case vReview:
+		switch {
+		case r.byHand != "":
+			return "this check is never run automatically — it would log in to an instance, which a read-only audit must not do. Run the command by hand and judge the result."
+		case firstErr != "":
+			return "the command ran, but a machine can't score this criterion — compare the output with it. Part of the command couldn't run (see stderr): " + firstErr
+		case r.output == "":
+			return "the command ran cleanly and returned nothing, but a machine can't score this criterion — decide whether no output meets it."
+		default:
+			return fmt.Sprintf("the command ran cleanly and returned %d line%s, but a machine can't score this criterion — compare the output with it.", lines, plural)
+		}
+	case vNA:
+		return firstErr + " — the product isn't in use here, so the requirement doesn't apply."
+	case vSkip:
+		return firstErr + ". Add it to the `-config` file (or set it to `none` if it doesn't exist) and re-run."
+	case vDenied:
+		return "the audit identity is missing a permission, so this result can't be trusted: " + firstErr
+	case vError:
+		if firstErr == "" {
+			return "the command failed without saying why."
+		}
+		return "the command failed: " + firstErr
+	case vXref:
+		return "this requirement is scored by another check that didn't run in this pass — see " + strings.Join(r.refs, ", ") + " in the other pass."
+	}
+	return ""
+}
+
 // cell renders the first line of s as a single markdown table cell. A raw
 // multi-line value breaks the row, and a "|" or backtick breaks the table.
 func cell(s string) string {
@@ -1034,15 +1091,6 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	}
 	a.WriteString("\n")
 
-	if t[vFail] > 0 {
-		a.WriteString("## Findings\n\n")
-		for _, r := range rs {
-			if r.v == vFail {
-				fmt.Fprintf(&a, "### %s — %s\n\n`%s` · pass if: %s\n\n```\n%s\n```\n\n",
-					r.id, r.title, r.ref, r.criteria, r.output)
-			}
-		}
-	}
 	if t[vDenied]+t[vError] > 0 {
 		a.WriteString("## Problems\n\n| Check | Verdict | Detail |\n|---|---|---|\n")
 		for _, r := range rs {
@@ -1062,6 +1110,30 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 			}
 		}
 		a.WriteString("\n")
+	}
+
+	// Every check, in V-number order, with its verdict and the reason for it,
+	// so the pack reads as the evidence record rather than a list of failures.
+	// Nothing here may look like a Results table row: rollup.go parses those.
+	a.WriteString("## Detail\n\nEvery check in V-number order: its verdict, the pass criterion, why it got that verdict, and the output.\n\n")
+	for _, r := range rs {
+		fmt.Fprintf(&a, "### %s — %s\n\n", r.id, r.title)
+		fmt.Fprintf(&a, "**%s** · `%s`\n\n", r.v.label(), r.ref)
+		if r.criteria != "" {
+			fmt.Fprintf(&a, "**Pass if:** %s\n\n", r.criteria)
+		}
+		fmt.Fprintf(&a, "**Why %s:** %s\n\n", r.v.label(), why(r))
+		body := r.output
+		if body == "" {
+			body = "(no output)"
+		}
+		fmt.Fprintf(&a, "```\n%s\n```\n\n", body)
+		if r.errText != "" && r.errText != r.output {
+			fmt.Fprintf(&a, "<details><summary>stderr</summary>\n\n```\n%s\n```\n\n</details>\n\n", r.errText)
+		}
+		if r.command != "" {
+			fmt.Fprintf(&a, "<details><summary>command</summary>\n\n```bash\n%s\n```\n\n</details>\n\n", r.command)
+		}
 	}
 	if err := os.WriteFile(dir+"/01-automated-results.md", []byte(a.String()), 0o644); err != nil {
 		return err
