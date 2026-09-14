@@ -60,11 +60,21 @@ gcloud services list --enabled --project="$AUDIT_PROJECT" \
   --format="value(config.name)" | sort > ./audit-state/apis-before.txt
 
 gcloud services enable \
-  cloudasset.googleapis.com essentialcontacts.googleapis.com \
-  accesscontextmanager.googleapis.com recommender.googleapis.com \
-  policyanalyzer.googleapis.com osconfig.googleapis.com \
+  accesscontextmanager.googleapis.com bigquery.googleapis.com \
+  cloudasset.googleapis.com cloudbilling.googleapis.com \
+  cloudresourcemanager.googleapis.com essentialcontacts.googleapis.com \
+  iam.googleapis.com iamcredentials.googleapis.com \
+  logging.googleapis.com monitoring.googleapis.com \
+  orgpolicy.googleapis.com policyanalyzer.googleapis.com \
+  recommender.googleapis.com securitycenter.googleapis.com \
+  serviceusage.googleapis.com spanner.googleapis.com \
+  sqladmin.googleapis.com \
   --project=$AUDIT_PROJECT
+```
 
+These are the APIs the audit's calls are **billed to the host project** for — measured from request metrics in a live run ([`docs/testing/required-apis.md`](testing/required-apis.md)). Product APIs such as Compute, GKE, DNS and OS Config bill to the *audited* project instead; enabling them here does nothing, and where they are off in an audited project the check is correctly N/A.
+
+```bash
 gcloud services list --enabled --project="$AUDIT_PROJECT" \
   --format="value(config.name)" | sort > ./audit-state/apis-after.txt
 

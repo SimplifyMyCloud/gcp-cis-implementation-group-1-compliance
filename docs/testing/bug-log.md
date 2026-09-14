@@ -778,3 +778,30 @@ exited 0 through the rest of the pipeline.
 **Fix** — Continuation removed; output sectioned into DNS policies, firewall rules
 (`logConfig.enable`, which the check title promised but never queried), and Cloud NAT. Verified:
 lists 5 firewall rules and `iq9-nat-bakery-us-we1 True`; DNS section notes the API is disabled.
+
+## BUG-028 — Runbook enables 6 APIs; the audit needs 17 in the host project
+
+| | |
+|---|---|
+| Found | 2026-09-13/14, runs 3–8 (errors) and API request metrics (run 8) |
+| Component | `docs/cis-ig1-audit-runbook.md` Phase 1, `docs/cis-ig1-run-sheet.md` A3 |
+| Check | V115, V157 observed ERROR; the rest measured (see `required-apis.md`) |
+| Severity | blocks run — on a host project without the missing APIs, checks ERROR |
+
+**Error**
+
+```
+V115  ERROR  API DISABLED IN AUDIT HOST PROJECT: securitycenter.googleapis.com on simplifymycloud-dev — enable it there and re-run
+V157  API [spanner.googleapis.com] not enabled on project [288261943767]
+```
+
+**Cause** — The documented list (`cloudasset essentialcontacts accesscontextmanager recommender
+policyanalyzer osconfig`) omitted 11 APIs that the audit's calls are billed to the host project for:
+`bigquery cloudbilling cloudresourcemanager iam iamcredentials logging monitoring orgpolicy
+securitycenter serviceusage spanner sqladmin`, less the ones already listed. It also included
+`osconfig`, whose calls bill to the audited project, so enabling it in the host did nothing.
+The test host project already had most of these enabled, which is how the gap stayed hidden.
+
+**Fix** — Both documents now enable the 17 measured APIs and explain the host/audited-project
+split. Verified: run 8 — both passes `RUN STATUS: OK`, 0 ERROR, 0 DENIED. Full evidence per API is in
+[`required-apis.md`](required-apis.md). Recommended: one confirmation run from an empty host project.
