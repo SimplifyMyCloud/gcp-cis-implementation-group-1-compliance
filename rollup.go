@@ -237,12 +237,19 @@ func writePlan(path string, fs []finding, packs []packInfo, usable, excluded int
 	}
 	b.WriteString("\n")
 
+	// Links resolve relative to wherever the plan is written (the runbook puts
+	// it in audit-state/), not to docs/. Run from the repository root.
+	docs := "docs"
+	if rel, err := filepath.Rel(filepath.Dir(path), "docs"); err == nil {
+		docs = filepath.ToSlash(rel)
+	}
+
 	b.WriteString("## Detail\n\n")
 	for i, f := range fs {
 		fmt.Fprintf(&b, "### %d. `%s` — %s\n\n", i+1, f.ref, f.title)
-		fmt.Fprintf(&b, "Check [%s](cis-ig1-cli-validation.md#%s) · safeguard %s · "+
-			"[how to fix](cis-ig1-remediation-reference.md)\n\n",
-			f.check, strings.ToLower(f.check), safeguard(f.ref))
+		fmt.Fprintf(&b, "Check [%s](%s/cis-ig1-cli-validation.md#%s) · safeguard %s · "+
+			"[how to fix](%s/cis-ig1-remediation-reference.md)\n\n",
+			f.check, docs, strings.ToLower(f.check), safeguard(f.ref), docs)
 		if f.org {
 			b.WriteString("Fails at **organization** scope.\n\n")
 		}

@@ -32,8 +32,8 @@ Checks are tagged **`scope: org`** or **`scope: project`**, and they run as two 
 
 | Pass | Checks | Command |
 |---|---|---|
-| **Organization** | 67 | `go run audit-run.go -scope=org` |
-| **Project** | 91 | `go run audit-run.go -scope=project -project=PROJECT_ID` — **once per project** |
+| **Organization** | 68 | `go run audit-run.go -scope=org` |
+| **Project** | 90 | `go run audit-run.go -scope=project -project=PROJECT_ID` — **once per project** |
 
 Run the organization pass first. It establishes the posture every project inherits, and several of its findings explain project-level results — a missing org policy constraint is why fifty projects each have a default network.
 
@@ -666,7 +666,7 @@ gcloud logging buckets list --organization=$ORG_ID --location=global \
 
 **Buckets and datasets with no retention rule remediated** · checklist `3.4#6` · scope: xref · cross-reference
 
-See V38 and V39 — both must return empty.
+See V37 and V38 — both must return empty.
 
 **Pass:** Both prerequisite checks empty.
 
@@ -797,9 +797,9 @@ gcloud org-policies describe compute.skipDefaultNetworkCreation --organization=$
 
 **Default network deleted from every existing project** · checklist `4.2#3` · scope: xref · cross-reference
 
-See V47 — the constraint is not retroactive.
+See V46 — the constraint is not retroactive.
 
-**Pass:** V47 returns empty.
+**Pass:** V46 returns empty.
 
 #### V49
 
@@ -830,9 +830,9 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 **No auto-mode or legacy networks remain** · checklist `4.2#6` · scope: xref · cross-reference
 
-See V50.
+See V49.
 
-**Pass:** V50 returns empty.
+**Pass:** V49 returns empty.
 
 #### V52
 
@@ -989,7 +989,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 **Existing open firewall rules removed** · checklist `4.4#8` · scope: xref · cross-reference
 
-See V57 and V58.
+See V55 and V56.
 
 **Pass:** Both return empty.
 
@@ -1214,7 +1214,7 @@ gcloud org-policies describe iam.automaticIamGrantsForDefaultServiceAccounts \
 
 **Editor stripped from default SAs in existing projects** · checklist `4.7#4` · scope: xref · cross-reference
 
-See V71 and V72 — the constraint is not retroactive.
+See V77 and V78 — the constraint is not retroactive.
 
 **Pass:** Both return empty.
 
@@ -1235,9 +1235,9 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 **Workloads run as purpose-built service accounts** · checklist `4.7#6` · scope: xref · cross-reference
 
-See V75.
+See V81.
 
-**Pass:** V75 returns empty.
+**Pass:** V81 returns empty.
 
 #### V83
 
@@ -1277,7 +1277,7 @@ done
 
 **Default network and firewall rules removed** · checklist `4.7#9` · scope: xref · cross-reference
 
-See V47 and V51.
+See V46 and V50.
 
 **Pass:** Both return empty.
 
@@ -1331,9 +1331,9 @@ gcloud iam service-accounts list --project="$PROJECT_ID" \
 
 **External principals identified** · checklist `5.1#5` · scope: xref · cross-reference
 
-See V33.
+See V31.
 
-**Pass:** V33 output reviewed and documented.
+**Pass:** V31 output reviewed and documented.
 
 **Manual — GCP task, no CLI surface:**
 
@@ -1387,9 +1387,9 @@ gcloud policy-intelligence query-activity \
 
 **Existing keys inventoried, aged and eliminated** · checklist `5.2#5` · scope: xref · cross-reference
 
-See V83.
+See V91 and V92.
 
-**Pass:** V83 returns empty.
+**Pass:** V91 and V92 pass.
 
 #### V94
 
@@ -1475,7 +1475,7 @@ gcloud iam service-accounts list --project="$PROJECT_ID" \
 
 #### V99
 
-**No basic roles held by individuals at org or folder level** · checklist `5.4#1` · scope: project
+**No basic roles held by individuals at org or folder level** · checklist `5.4#1` · scope: org
 
 ```bash
 gcloud organizations get-iam-policy $ORG_ID --flatten="bindings[].members" \
@@ -1489,17 +1489,17 @@ gcloud organizations get-iam-policy $ORG_ID --flatten="bindings[].members" \
 
 **Pre-existing basic-role grants enumerated and replaced** · checklist `5.4#2` · scope: xref · cross-reference
 
-See V32.
+See V34 and V99.
 
-**Pass:** V32 returns empty.
+**Pass:** V34 and V99 return empty.
 
 #### V101
 
 **Basic roles replaced throughout** · checklist `5.4#3` · scope: xref · cross-reference
 
-See V32 — checks all levels, not just org.
+See V34 — checks all levels, not just org.
 
-**Pass:** V32 returns empty.
+**Pass:** V34 returns empty.
 
 #### V102
 
@@ -1645,7 +1645,7 @@ fi
 
 **SSH and RDP routed through IAP TCP forwarding** · checklist `6.4#1` · scope: xref · cross-reference
 
-See V67.
+See V72.
 
 **Pass:** IAP range firewall rules present.
 
@@ -1653,9 +1653,9 @@ See V67.
 
 **No VMs reachable on 22 or 3389 from the internet** · checklist `6.4#2` · scope: xref · cross-reference
 
-See V57.
+See V55.
 
-**Pass:** V57 returns empty.
+**Pass:** V55 returns empty.
 
 #### V111
 
@@ -1672,7 +1672,7 @@ gcloud compute interconnects list --format="table(name,state)"
 
 **Bastion hosts removed or behind IAP** · checklist `6.4#5` · scope: xref · cross-reference
 
-See V66.
+See V68 and V72.
 
 **Pass:** No bastion appears with an external IP.
 
@@ -1776,7 +1776,7 @@ gcloud compute os-config patch-deployments list \
 
 **OS Config agent coverage complete** · checklist `7.3#2` · scope: xref · cross-reference
 
-See V10.
+See V9.
 
 **Pass:** Instance counts match.
 
@@ -1795,7 +1795,7 @@ gcloud compute os-config patch-jobs list --limit=10 \
 
 **Instance templates reference current images** · checklist `7.3#5` · scope: xref · cross-reference
 
-See V17.
+See V19.
 
 **Pass:** Templates reference non-deprecated images.
 
@@ -1844,7 +1844,7 @@ gcloud services list --enabled --filter="containerscanning.googleapis.com" --pro
 
 **Serverless workloads on supported runtimes** · checklist `7.4#4` · scope: xref · cross-reference
 
-See V15.
+See V17.
 
 **Pass:** No deprecated runtimes.
 
@@ -2141,7 +2141,7 @@ gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)
 
 **Egress firewall rules constrain destinations** · checklist `9.2#3` · scope: xref · cross-reference
 
-See V60.
+See V58.
 
 **Pass:** Egress not unrestricted allow-all.
 
@@ -2194,7 +2194,7 @@ gcloud compute instances list --project="$PROJECT_ID" --format="value(name,zone.
 
 **Container image malware scanning in place** · checklist `10.1#4` · scope: xref · cross-reference
 
-See V116.
+See V122.
 
 **Pass:** containerscanning API enabled.
 
@@ -2202,7 +2202,7 @@ See V116.
 
 **Binary Authorization preventing unattested images** · checklist `10.1#5` · scope: xref · cross-reference
 
-See V24.
+See V21.
 
 **Pass:** Policy enforcing.
 
@@ -2502,7 +2502,7 @@ gcloud storage buckets describe gs://BACKUP_BUCKET --format="value(location,loca
 
 **GKE control plane and nodes within the supported window** · checklist `12.1#1` · scope: xref · cross-reference
 
-See V14.
+See V16.
 
 **Pass:** All clusters in a release channel and current.
 
@@ -2543,9 +2543,9 @@ gcloud compute target-pools list --format="table(name,region)"
 
 **Legacy networks eliminated** · checklist `12.1#5` · scope: xref · cross-reference
 
-See V50.
+See V49.
 
-**Pass:** V50 returns empty.
+**Pass:** V49 returns empty.
 
 #### V174
 
@@ -2608,7 +2608,7 @@ An earlier version of this check filtered on `gserviceaccount.com$`, which exclu
 
 **Workload Identity Federation trusts documented** · checklist `15.1#4` · scope: xref · cross-reference
 
-See V86.
+See V94.
 
 **Pass:** Every pool and provider is in the service provider register.
 
@@ -2629,7 +2629,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json
 
 **Domain restriction constraint enforced** · checklist `15.1#7` · scope: xref · cross-reference
 
-See V31.
+See V35.
 
 **Pass:** Constraint enforced, not dry-run.
 
@@ -2637,9 +2637,9 @@ See V31.
 
 **External grants predating the constraint enumerated** · checklist `15.1#8` · scope: xref · cross-reference
 
-See V33.
+See V31.
 
-**Pass:** V33 reviewed and documented.
+**Pass:** V31 reviewed and documented.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -2696,7 +2696,7 @@ gcloud essential-contacts list --organization=$ORG_ID \
 
 **Contacts set for Legal, Suspension and Technical** · checklist `17.2#2` · scope: xref · cross-reference
 
-See V163.
+See V181.
 
 **Pass:** All four categories covered.
 
@@ -2745,7 +2745,7 @@ gcloud alpha monitoring channels list --project="$PROJECT_ID" \
 
 **SCC findings routed to a monitored destination** · checklist `17.3#1` · scope: xref · cross-reference
 
-See V113.
+See V115.
 
 **Pass:** Notification config exists with a live topic.
 

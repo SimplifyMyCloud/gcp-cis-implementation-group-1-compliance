@@ -566,3 +566,128 @@ without the OS Config API — never entered the loop. Errors from `describe` wer
 `NO OS INVENTORY (agent presence unverifiable)`; otherwise the whole inventory document is searched
 for AV package names, independent of its layout. Verified: V147 FAIL
 `NO OS INVENTORY (agent presence unverifiable): cis-test-noncompliant-vm`.
+
+## BUG-021 — 27 cross-references point at the wrong check; requirements scored from unrelated results
+
+| | |
+|---|---|
+| Found | 2026-09-13, rollup of run 4 |
+| Component | `docs/cis-ig1-cli-validation.md` — `See Vn` lines and `**Pass:**` lines of xref entries |
+| Check | V41 V48 V51 V62 V80 V82 V85 V89 V93 V100 V101 V109 V110 V112 V117 V119 V123 V144 V148 V149 V169 V173 V176 V178 V179 V182 V186 |
+| Severity | wrong result — an xref inherits its target's verdict, so these requirements were ticked or failed on evidence about something else |
+
+**Error** — seen in the remediation plan:
+
+```
+| 9 | `17.2#2` | Contacts set for Legal, Suspension and Technical | project × 1 | iq9-gcp-dev-yamato |
+V182 "Contacts set for Legal, Suspension and Technical" → See V163 "Bucket Lock applied to backup buckets"
+```
+
+A full listing showed the pattern: most targets were off by one or two positions (e.g. V51
+"No auto-mode networks remain" → V50 "Default firewall rules deleted"; V110 "No VMs reachable on
+22/3389" → V57 "Default-deny ingress posture"), consistent with checks being renumbered after
+the cross-references were written.
+
+**Cause** — Cross-reference targets not updated when checks were renumbered.
+
+**Fix** — Each target re-chosen by matching the requirement to the check that measures it:
+
+| Xref | Requirement | Was | Now |
+|---|---|---|---|
+| V41 | Buckets and datasets with no retention rule | V38, V39 | V37, V38 |
+| V48 | Default network deleted from every project | V47 | V46 |
+| V51 | No auto-mode or legacy networks remain | V50 | V49 |
+| V62 | Existing open firewall rules removed | V57, V58 | V55, V56 |
+| V80 | Editor stripped from default SAs | V71, V72 | V77, V78 |
+| V82 | Workloads run as purpose-built SAs | V75 | V81 |
+| V85 | Default network and firewall rules removed | V47, V51 | V46, V50 |
+| V89 | External principals identified | V33 | V31 |
+| V93 | Existing keys inventoried, aged, eliminated | V83 | V91, V92 |
+| V100 | Pre-existing basic-role grants replaced | V32 | V34, V99 |
+| V101 | Basic roles replaced throughout | V32 | V34 |
+| V109 | SSH/RDP through IAP TCP forwarding | V67 | V72 |
+| V110 | No VMs reachable on 22/3389 from internet | V57 | V55 |
+| V112 | Bastion hosts removed or behind IAP | V66 | V68, V72 |
+| V117 | OS Config agent coverage complete | V10 | V9 |
+| V119 | Instance templates reference current images | V17 | V19 |
+| V123 | Serverless on supported runtimes | V15 | V17 |
+| V144 | Egress rules constrain destinations | V60 | V58 |
+| V148 | Container image malware scanning | V116 | V122 |
+| V149 | Binary Authorization preventing unattested images | V24 | V21 |
+| V169 | GKE versions within supported window | V14 | V16 |
+| V173 | Legacy networks eliminated | V50 | V49 |
+| V176 | Workload Identity Federation trusts documented | V86 | V94 |
+| V178 | Domain restriction constraint enforced | V31 | V35 |
+| V179 | External grants predating the constraint | V33 | V31 |
+| V182 | Contacts for Legal, Suspension, Technical | V163 | V181 |
+| V186 | SCC findings routed to a monitored destination | V113 | V115 |
+
+Matching `**Pass:**` text updated where it named the old check. **These mappings are a judgement
+call and should be reviewed by the kit's author.** Verified run 5: V182 inherits V181, V110
+inherits V55 (FAIL), V186 inherits V115.
+
+## BUG-022 — Cross-references ran in both passes, unresolved in one; partial evidence could PASS
+
+| | |
+|---|---|
+| Found | 2026-09-13, runs 1–4 |
+| Component | `audit-run.go` — scope filter in `main()`, `resolveXrefs()` |
+| Check | all 30 xrefs, e.g. V112 (needs org-scope V68 and project-scope V72) |
+| Severity | wrong result — XREF noise in every pass; a two-target xref could PASS on half its evidence |
+
+**Error**
+
+```
+org pack:     97 checks (67 org + all 30 xrefs)   — xrefs to project checks left as XREF
+project pack: 121 checks (91 project + all 30 xrefs)
+```
+
+**Cause** — Every xref was added to both passes regardless of where its targets run.
+`resolveXrefs` silently ignored targets missing from the pass and took the worst of the rest.
+
+**Fix** — New `inPass()` includes an xref only in a pass that runs at least one of its targets
+(org 82, project 108 checks). When some targets run in the other pass and the found ones would give
+PASS/REVIEW, the xref is REVIEW with "also requires Vn, which runs in the other pass". Verified
+run 5: V112 org FAIL (V68), project REVIEW (V72 + note).
+
+## BUG-023 — V99 (org/folder IAM) tagged project scope: repeated in every project pass
+
+| | |
+|---|---|
+| Found | 2026-09-13, rollup of run 4 |
+| Component | `docs/cis-ig1-cli-validation.md` — V99 |
+| Check | V99 |
+| Severity | wrong result — one org finding becomes N identical per-project work items |
+
+**Error**
+
+```
+| 17 | `5.4#1` | No basic roles held by individuals at org or folder level | project × 1 | iq9-gcp-dev-yamato |
+```
+
+**Cause** — The command reads `gcloud organizations get-iam-policy $ORG_ID` but the entry is
+`scope: project`. On a 105-project estate the rollup would show "project × 105" for one org binding.
+
+**Fix** — `scope: org`; the scope summary table updated to 68 org / 90 project. Verified run 5:
+V99 appears in the org pack only.
+
+## BUG-024 — Remediation plan links to the checks are broken
+
+| | |
+|---|---|
+| Found | 2026-09-13, rollup of run 4 |
+| Component | `rollup.go` — `writePlan()` |
+| Check | — |
+| Severity | cosmetic — every "Check Vn" / "how to fix" link 404s |
+
+**Error**
+
+```
+Check [V147](cis-ig1-cli-validation.md#v147) · … [how to fix](cis-ig1-remediation-reference.md)
+# plan written to ./audit-state/remediation-plan.md (runbook) or ./remediation-plan.md (default)
+```
+
+**Cause** — Links were hard-coded relative to `docs/`, but the plan is never written there.
+
+**Fix** — Link prefix computed with `filepath.Rel` from the plan's directory to `docs/`. Verified:
+`-out scratch/remediation-plan.md` produces `../docs/cis-ig1-cli-validation.md#v147`.

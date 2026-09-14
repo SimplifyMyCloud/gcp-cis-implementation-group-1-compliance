@@ -263,7 +263,7 @@ func main() {
 	case "org":
 		var f []check
 		for _, c := range checks {
-			if c.scope == "org" || c.scope == "xref" {
+			if inPass(c, "org", checks) {
 				f = append(f, c)
 			}
 		}
@@ -288,7 +288,7 @@ func main() {
 		os.Setenv("CLOUDSDK_CORE_PROJECT", *project)
 		var f []check
 		for _, c := range checks {
-			if c.scope == "project" || c.scope == "xref" {
+			if inPass(c, "project", checks) {
 				f = append(f, c)
 			}
 		}
@@ -592,6 +592,26 @@ func truncate(s string, n int) string {
 // defer to. Without this they sit as XREF forever and read like an error.
 // The worst verdict among the referenced checks wins — a cross-reference to
 // two checks is only satisfied when both are.
+// inPass reports whether a check belongs to the given pass. A cross-reference
+// joins a pass only when at least one check it defers to runs there; otherwise
+// it would sit unresolved as XREF in every pass.
+func inPass(c check, pass string, all []check) bool {
+	if c.scope == pass {
+		return true
+	}
+	if c.scope != "xref" {
+		return false
+	}
+	for _, id := range c.refs {
+		for _, o := range all {
+			if o.id == id && o.scope == pass {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func resolveXrefs(results []result) {
 	byID := map[string]*result{}
 	for i := range results {
@@ -604,10 +624,11 @@ func resolveXrefs(results []result) {
 			continue
 		}
 		worst, found := vPass, false
-		var from []string
+		var from, elsewhere []string
 		for _, id := range results[i].refs {
 			ref, ok := byID[id]
 			if !ok || ref.v == vXref {
+				elsewhere = append(elsewhere, id)
 				continue
 			}
 			found = true
@@ -619,6 +640,13 @@ func resolveXrefs(results []result) {
 		if found {
 			results[i].v = worst
 			results[i].output = "inherited from " + strings.Join(from, ", ")
+			// Half the evidence is not a pass: the rest is checked in the
+			// other pass (e.g. V112 needs org-scope V68 and project-scope V72).
+			if len(elsewhere) > 0 && rank[worst] <= rank[vReview] {
+				results[i].v = vReview
+				results[i].output += "; also requires " + strings.Join(elsewhere, ", ") +
+					", which runs in the other pass — check it there before ticking"
+			}
 			results[i].errText = results[i].output
 		}
 	}
