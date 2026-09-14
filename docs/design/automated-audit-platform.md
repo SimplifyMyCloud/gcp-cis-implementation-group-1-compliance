@@ -103,7 +103,7 @@ Every mode:
 
 - **Judges the run by `RUN STATUS`, not the exit code.** `audit-run` exits 1 whenever it finds problems (code change 2). A task fails only if a pack reports `UNRELIABLE`/`DEGRADED`, or `audit-run` exits 2 (usage/IO).
 - **Streams progress to stdout**, so Cloud Logging carries the live `[ n/ N] V55 FAIL …` lines.
-- **Sets placeholders from environment variables.** `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT` come from Terraform variables (`none` allowed); `substitute()` already reads them from the environment.
+- **Passes placeholders as a config file.** `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT` come from Terraform variables (`none` allowed) as job environment variables. `entrypoint.sh` writes them to `/work/audit.env` and calls `audit-run -config`. Not environment variables straight through: `substitute()` honours `none` only from `-config`/`-set`, and an environment variable `none` would be substituted literally (`gs://none`).
 
 ## Targeting projects (D4)
 
