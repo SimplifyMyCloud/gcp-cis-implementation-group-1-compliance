@@ -468,6 +468,13 @@ project-wide `ssh-keys` metadata entry (dummy public key). The org policy
 `compute.requireOsLogin` refused a VM with `enable-oslogin=FALSE`, so the VM inherits OS Login
 from project metadata instead — which became a test in itself (BUG-018).
 
+Added 2026-09-14: an **empty** bucket readable by `allUsers` (`cis-test-public-bucket-iq9-yamato`).
+V27 and V29 FAIL, naming it; they PASSed before it existed. A user-managed SA key fixture was **not**
+created: the org enforces `iam.disableServiceAccountKeyCreation`, and org policy stays untouched.
+Instead the key checks ran read-only against `simplifymycloud-dev`, which has keys that predate the
+constraint. V91 FAILs, listing both user-managed keys Asset Inventory reports. V92 lists key
+last-authentication times. No fault in either.
+
 ## BUG-017 — V55/V56 miss internet-open rules that allow all protocols or a port range
 
 | | |

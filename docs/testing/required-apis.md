@@ -87,9 +87,10 @@ gcloud services enable --project="$AUDIT_PROJECT" \
 the seventeen above were missing. `osconfig` is billed to the audited project, so enabling it in the
 host did nothing. Both documents are corrected (BUG-028).
 
-**Caveat.** The host project already had about 110 APIs enabled. So apart from rows 14 and 16, the
-evidence is "the audit called it, billed here" rather than an observed failure on a clean project.
-One confirmation run from a **new, empty host project** would turn every row into an observed error.
+**Evidence basis.** The host project already had about 110 APIs enabled. So apart from rows 14 and
+16, the evidence is "the audit called it, billed here" rather than an observed failure on a clean
+project. Decision (2026-09-14): no clean-project confirmation run. Any project the audit runs from is
+assumed to have these prerequisite APIs enabled.
 
 ### How the metrics were read
 
