@@ -723,3 +723,58 @@ unset — caught in verification). V160 now uses one Asset Inventory call,
 `search-all-iam-policies --scope=projects/$PROJECT_ID --asset-types=cloudkms.googleapis.com/CryptoKey`,
 covering every location. Verified: V42 `versioning=off soft_delete=604800` (matches
 `gcloud storage buckets describe`); V84 lists `yamato-dev` users once; V160 empty (no keys); V83 N/A (GKE API off).
+
+## BUG-026 — `2>/dev/null` turns a failed command into a PASS
+
+| | |
+|---|---|
+| Found | 2026-09-13, project pass against a non-existent project (deliberate negative test) |
+| Component | `docs/cis-ig1-cli-validation.md` — V30 V37 V49 V91 (auto-scored); V7 V88 V94 V133 V143 V155 V156 V157 V184 (review) |
+| Check | as listed |
+| Severity | wrong result — false PASS whenever the audit identity can't read the project |
+
+**Error**
+
+```
+$ go run audit-run.go -scope=project -project=cis-test-no-such-project-4242 -only V30,V37,V49,V91
+V30 PASS   V37 PASS   V49 PASS   V91 PASS
+```
+
+**Cause** — The listing command's stderr was discarded. When it failed (no such project, no
+permission, API disabled) it printed nothing; empty output is these checks' PASS criterion, and
+`audit-run.go` never saw the error. Review checks showed an empty result a human would read as
+"none found". V91 also still echoed the undefined `$p`. V7 listed `DELETE_REQUESTED` projects for
+the whole org inside a single-project pass.
+
+**Fix** — `2>/dev/null` removed from those project checks (org checks where a denial is expected
+— sink destinations outside the org — left as they are). V91 `$p` → `$PROJECT_ID`. V7 reports only
+the audited project's `lifecycleState`. Verified: against the non-existent project V30/V37/V49/V88/V91
+now ERROR and V7/V94/V184 DENIED; against `iq9-gcp-dev-yamato` verdicts unchanged (V30/V37/V49 FAIL,
+V91 PASS), V156/V157 N/A with the disabled API named.
+
+## BUG-027 — V133 never ran: two commands joined by a stray line continuation
+
+| | |
+|---|---|
+| Found | 2026-09-13, project pass |
+| Component | `docs/cis-ig1-cli-validation.md` — V133 |
+| Check | V133 |
+| Severity | wrong result — empty REVIEW every run; the firewall part of "DNS, NAT and firewall logging" was never checked |
+
+**Error**
+
+```
+ERROR: (gcloud.dns.policies.list) unrecognized arguments:
+  gcloud
+  compute
+  routers
+  list
+```
+
+**Cause** — A trailing `\` after `gcloud dns policies list …` appended the next line
+(`gcloud compute routers list …`) as arguments. The failure was hidden by `2>/dev/null`, and bash
+exited 0 through the rest of the pipeline.
+
+**Fix** — Continuation removed; output sectioned into DNS policies, firewall rules
+(`logConfig.enable`, which the check title promised but never queried), and Cloud NAT. Verified:
+lists 5 firewall rules and `iq9-nat-bakery-us-we1 True`; DNS section notes the API is disabled.

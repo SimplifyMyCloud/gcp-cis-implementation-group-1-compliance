@@ -193,8 +193,8 @@ gcloud compute shared-vpc organizations list-host-projects $ORG_ID
 **Projects with no billing account or pending deletion dispositioned** · checklist `1.2#2` · scope: project
 
 ```bash
-gcloud projects list --filter="lifecycleState:DELETE_REQUESTED" \
-  --format="table(projectId,createTime)"
+state=$(gcloud projects describe "$PROJECT_ID" --format="value(lifecycleState)")
+if [ "$state" != "ACTIVE" ]; then echo "PROJECT NOT ACTIVE: $PROJECT_ID ($state)"; fi
 
 # Billing attached to the project under audit? Reads the project's own billing
 # info, so it needs no role on the billing account — which usually sits outside
@@ -522,8 +522,8 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
 **All buckets migrated off legacy per-object ACLs** · checklist `3.3#4` · scope: project · loops all projects — slow on a large estate
 
 ```bash
-gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read b; do
-  u=$(gcloud storage buckets describe "gs://$b" --format="value(uniform_bucket_level_access)" 2>/dev/null)
+gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read b; do
+  u=$(gcloud storage buckets describe "gs://$b" --format="value(uniform_bucket_level_access)")
   if [ "$u" != "True" ]; then echo "LEGACY ACLs: $PROJECT_ID / $b"; fi
 done
 ```
@@ -620,8 +620,8 @@ gcloud access-context-manager perimeters list --policy=$POLICY_ID \
 **Lifecycle rules applied to Cloud Storage buckets** · checklist `3.4#2` · scope: project · loops all projects — slow on a large estate
 
 ```bash
-gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read b; do
-  l=$(gcloud storage buckets describe "gs://$b" --format="value(lifecycle_config)" 2>/dev/null)
+gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read b; do
+  l=$(gcloud storage buckets describe "gs://$b" --format="value(lifecycle_config)")
   if [ -z "$l" ]; then echo "NO LIFECYCLE RULE: $PROJECT_ID / $b"; fi
 done
 ```
@@ -806,7 +806,7 @@ See V46 — the constraint is not retroactive.
 
 ```bash
 gcloud compute networks list --project="$PROJECT_ID" \
-  --format="value(name,x_gcloud_subnet_mode)" 2>/dev/null \
+  --format="value(name,x_gcloud_subnet_mode)" \
   | grep -E "LEGACY|AUTO" || true
 ```
 
@@ -1317,7 +1317,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json
 
 ```bash
 gcloud iam service-accounts list --project="$PROJECT_ID" \
-  --format="value(email,displayName,disabled)" 2>/dev/null
+  --format="value(email,displayName,disabled)"
 ```
 
 **Pass:** Every account has a meaningful display name and a recorded owner.
@@ -1355,10 +1355,10 @@ gcloud org-policies describe iam.disableServiceAccountKeyCreation --organization
 **Every pre-existing user-managed key inventoried** · checklist `5.2#3` · scope: project · loops all projects — slow on a large estate
 
 ```bash
-gcloud iam service-accounts list --project="$PROJECT_ID" --format="value(email)" 2>/dev/null | while read sa; do
+gcloud iam service-accounts list --project="$PROJECT_ID" --format="value(email)" | while read sa; do
   gcloud iam service-accounts keys list --iam-account="$sa" --managed-by=user \
-    --format="value(name,validAfterTime)" 2>/dev/null | while read k t; do
-      echo "USER KEY: $p / $sa / created $t"
+    --format="value(name,validAfterTime)" | while read k t; do
+      echo "USER KEY: $PROJECT_ID / $sa / created $t"
   done
 done
 ```
@@ -1392,7 +1392,7 @@ See V91 and V92.
 
 ```bash
 gcloud iam workload-identity-pools list --location=global --project="$PROJECT_ID" \
-  --format="value(name,state)" 2>/dev/null
+  --format="value(name,state)"
 ```
 
 **Pass:** Pools exist for every CI or external workload previously using keys.
@@ -1990,11 +1990,15 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **DNS, NAT and firewall logging enabled** · checklist `8.2#8` · scope: project
 
 ```bash
-gcloud dns policies list --project="$PROJECT_ID" --format="value(name,enableLogging)" 2>/dev/null \
-gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)" 2>/dev/null \
+echo "== DNS policies (name, enableLogging)"
+gcloud dns policies list --project="$PROJECT_ID" --format="value(name,enableLogging)"
+echo "== Firewall rules (name, logConfig.enable)"
+gcloud compute firewall-rules list --project="$PROJECT_ID" --format="value(name,logConfig.enable)"
+echo "== Cloud NAT (name, logConfig.enable)"
+gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)" \
 | while read -r r reg; do
     gcloud compute routers nats list --router="$r" --region="$reg" --project="$PROJECT_ID" \
-      --format="value(name,logConfig.enable)" 2>/dev/null
+      --format="value(name,logConfig.enable)"
   done
 ```
 
@@ -2123,10 +2127,10 @@ gcloud dns response-policies list --format="table(responsePolicyName,networks)"
 **Egress routed through Cloud NAT or a proxy** · checklist `9.2#2` · scope: project
 
 ```bash
-gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)" 2>/dev/null \
+gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)" \
 | while read -r r reg; do
     gcloud compute routers nats list --router="$r" --region="$reg" --project="$PROJECT_ID" \
-      --format="value(name,natIpAllocateOption)" 2>/dev/null
+      --format="value(name,natIpAllocateOption)"
   done
 ```
 
@@ -2305,8 +2309,8 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Bucket versioning and soft delete enabled** · checklist `11.2#3` · scope: project
 
 ```bash
-gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read -r b; do
-  v=$(gcloud storage buckets describe "gs://$b" --format="value(versioning.enabled)" 2>/dev/null)
+gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read -r b; do
+  v=$(gcloud storage buckets describe "gs://$b" --format="value(versioning.enabled)")
   if [ "$v" != "True" ]; then echo "NO VERSIONING: $PROJECT_ID / $b"; fi
 done
 ```
@@ -2318,10 +2322,10 @@ done
 **Backup for GKE configured where needed** · checklist `11.2#4` · scope: project
 
 ```bash
-gcloud container clusters list --project="$PROJECT_ID" --format="value(location)" 2>/dev/null | sort -u \
+gcloud container clusters list --project="$PROJECT_ID" --format="value(location)" | sort -u \
 | while read -r loc; do
     gcloud beta container backup-restore backup-plans list --location="$loc" --project="$PROJECT_ID" \
-      --format="value(name,cluster,backupSchedule.cronSchedule)" 2>/dev/null
+      --format="value(name,cluster,backupSchedule.cronSchedule)"
   done
 ```
 
@@ -2332,9 +2336,9 @@ gcloud container clusters list --project="$PROJECT_ID" --format="value(location)
 **Other data services backed up** · checklist `11.2#5` · scope: project
 
 ```bash
-gcloud firestore backups list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null
-gcloud spanner instances list --project="$PROJECT_ID" --format="value(name)" 2>/dev/null | while read -r si; do
-  gcloud spanner backups list --instance="$si" --project="$PROJECT_ID" --format="value(name)" 2>/dev/null
+gcloud firestore backups list --project="$PROJECT_ID" --format="value(name)"
+gcloud spanner instances list --project="$PROJECT_ID" --format="value(name)" | while read -r si; do
+  gcloud spanner backups list --instance="$si" --project="$PROJECT_ID" --format="value(name)"
 done
 ```
 
@@ -2703,7 +2707,7 @@ gcloud essential-contacts list --organization=$ORG_ID --format="value(email)"
 **Pre-existing contacts reviewed and replaced** · checklist `17.2#4` · scope: project · loops all projects — slow on a large estate
 
 ```bash
-gcloud essential-contacts list --project="$PROJECT_ID" --format="value(email)" 2>/dev/null
+gcloud essential-contacts list --project="$PROJECT_ID" --format="value(email)"
 ```
 
 **Pass:** No personal or departed-employee addresses remain.
