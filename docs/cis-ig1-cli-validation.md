@@ -894,9 +894,14 @@ gcloud iap settings get --resource-type=iap_web --project="$PROJECT_ID" \
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
   --asset-types=compute.googleapis.com/Firewall --read-mask='*' --format=json \
-  | jq -r '.[] | select([.versionedResources[]?.resource.sourceRanges[]?] | index("0.0.0.0/0"))
-    | select([.versionedResources[]?.resource.allowed[]?.ports[]?] | any(. == "22" or . == "3389"))
-    | "OPEN ADMIN PORT: \(.name)"'
+  | jq -r 'def covers($n): (split("-") | map(tonumber)) as $r | $r[0] <= $n and $n <= ($r[1] // $r[0]);
+    .[] | .name as $name | .versionedResources[]?.resource as $fw
+    | select([$fw.sourceRanges[]?] | any(. == "0.0.0.0/0" or . == "::/0"))
+    # "all" protocols, or tcp with no ports (= every port), or a port/range covering a watched port
+    | select([$fw.allowed[]? | select(.IPProtocol == "all"
+        or ((.IPProtocol == "tcp" or .IPProtocol == "6")
+            and ((.ports // []) | length == 0 or any(covers(22) or covers(3389)))))] | length > 0)
+    | "OPEN ADMIN PORT: \($name)"' | sort -u
 ```
 
 **Pass:** Empty output.
@@ -908,10 +913,14 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 ```bash
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
   --asset-types=compute.googleapis.com/Firewall --read-mask='*' --format=json \
-  | jq -r '.[] | select([.versionedResources[]?.resource.sourceRanges[]?] | index("0.0.0.0/0"))
-    | select([.versionedResources[]?.resource.allowed[]?.ports[]?]
-      | any(. == "3306" or . == "5432" or . == "1433" or . == "27017" or . == "6379"))
-    | "OPEN DB PORT: \(.name)"'
+  | jq -r 'def covers($n): (split("-") | map(tonumber)) as $r | $r[0] <= $n and $n <= ($r[1] // $r[0]);
+    .[] | .name as $name | .versionedResources[]?.resource as $fw
+    | select([$fw.sourceRanges[]?] | any(. == "0.0.0.0/0" or . == "::/0"))
+    # "all" protocols, or tcp with no ports (= every port), or a port/range covering a watched port
+    | select([$fw.allowed[]? | select(.IPProtocol == "all"
+        or ((.IPProtocol == "tcp" or .IPProtocol == "6")
+            and ((.ports // []) | length == 0 or any(covers(3306) or covers(5432) or covers(1433) or covers(27017) or covers(6379)))))] | length > 0)
+    | "OPEN DB PORT: \($name)"' | sort -u
 ```
 
 **Pass:** Empty output.
@@ -1025,10 +1034,19 @@ gcloud org-policies describe compute.requireOsLogin --organization=$ORG_ID --eff
 **Existing VMs without OS Login remediated** · checklist `4.6#2` · scope: org · needs `jq`
 
 ```bash
+# Effective OS Login: the instance's enable-oslogin if set, otherwise its
+# project's. The org policy is not retroactive, so it proves nothing about
+# instances that already exist.
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
   --asset-types=compute.googleapis.com/Instance --read-mask='*' --format=json \
-  | jq -r '.[] | select([.versionedResources[]?.resource.metadata.items[]?
-    | select(.key == "enable-oslogin" and (.value | ascii_upcase) == "TRUE")] | length == 0)
+  | jq -r --slurpfile projects <(gcloud asset search-all-resources --scope=organizations/$ORG_ID \
+      --asset-types=compute.googleapis.com/Project --read-mask='*' --format=json) '
+    def oslogin: [.[]? | select(.key == "enable-oslogin") | .value | ascii_upcase] | first;
+    ($projects[0] | map({key: .project,
+      value: ([.versionedResources[]?.resource.commonInstanceMetadata.items] | first | oslogin)})
+      | from_entries) as $proj
+    | .[] | ([.versionedResources[]?.resource.metadata.items] | first | oslogin) as $inst
+    | select(($inst // $proj[.project] // "FALSE") != "TRUE")
     | "NO OS LOGIN: \(.name)"'
 ```
 
@@ -1039,9 +1057,10 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Project-wide SSH keys removed** · checklist `4.6#3` · scope: project · loops all projects — slow on a large estate
 
 ```bash
+# "ssh-keys" is the current key; "sshKeys" the deprecated one. Both grant access.
 gcloud compute project-info describe --project="$PROJECT_ID" \
-  --format="value(commonInstanceMetadata.items[].key)" 2>/dev/null \
-  | grep -qw "sshKeys" && echo "PROJECT-WIDE SSH KEYS: $PROJECT_ID" || true
+  --format="value(commonInstanceMetadata.items[].key)" \
+  | tr ';' '\n' | grep -Ex "ssh-keys|sshKeys" | sed "s|^|PROJECT-WIDE SSH KEYS: $PROJECT_ID |"
 ```
 
 **Pass:** Empty output.
@@ -2157,11 +2176,16 @@ gcloud logging metrics list --project="$PROJECT_ID" --filter="name~dns" --format
 **Agent presence verifiable through OS inventory** · checklist `10.1#3` · scope: project · needs `jq` · loops all projects — slow on a large estate
 
 ```bash
-gcloud compute instances os-inventory list-instances --format="value(name,zone)" | while read n z; do
-  gcloud compute instances os-inventory describe "$n" --zone="$z" --format=json 2>/dev/null \
-    | jq -e '.items.installedPackages[]? | select(.name | test("clamav|falcon|defender"))' >/dev/null \
-    || echo "NO AV AGENT: $n"
-done
+# Every instance, not just those already reporting inventory — a VM with no
+# OS Config agent is exactly the one whose AV agent can't be verified.
+gcloud compute instances list --project="$PROJECT_ID" --format="value(name,zone.basename())" \
+  | while read -r n z; do
+      if ! inv=$(gcloud compute instances os-inventory describe "$n" --zone="$z" --project="$PROJECT_ID" --format=json); then
+        echo "NO OS INVENTORY (agent presence unverifiable): $n"
+      elif ! echo "$inv" | jq -e '[.. | strings | select(test("clamav|falcon|defender|sentinel"; "i"))] | length > 0' >/dev/null; then
+        echo "NO AV AGENT: $n"
+      fi
+    done
 ```
 
 **Pass:** Empty, or every result is a documented exception.

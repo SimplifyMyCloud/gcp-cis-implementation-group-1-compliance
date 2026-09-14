@@ -454,3 +454,115 @@ at once overwrite each other's project list.
 **Fix** — `audit-run.go` creates the `-pack` directory up front and exports `AUDIT_PACK_DIR`;
 V86 writes to `${AUDIT_PACK_DIR:-./audit-state}`. V175 uses `mktemp`. Verified: org run with
 `-pack scratch/tmp-pack-o` puts `iam-inventory.txt` in the pack; nothing written at repo root.
+
+---
+
+## Test fixtures
+
+From here, deliberately non-compliant resources were deployed to `iq9-gcp-dev-yamato`
+(uncommitted Terraform in `scratch/test-infra/`) so checks had something to find: an auto-mode
+VPC, an e2-micro VM (external IP, not shielded, default compute SA, unlabelled, no rule reaches
+it), internet-open firewall rules for tcp:3306, **all protocols**, and tcp:**20-25** (all targeting
+a tag nothing carries), an untargeted internal rule, a BigQuery dataset with no expiration, and a
+project-wide `ssh-keys` metadata entry (dummy public key). The org policy
+`compute.requireOsLogin` refused a VM with `enable-oslogin=FALSE`, so the VM inherits OS Login
+from project metadata instead — which became a test in itself (BUG-018).
+
+## BUG-017 — V55/V56 miss internet-open rules that allow all protocols or a port range
+
+| | |
+|---|---|
+| Found | 2026-09-13, org pass against fixtures |
+| Component | `docs/cis-ig1-cli-validation.md` — V55, V56 |
+| Check | V55 (SSH/RDP), V56 (database ports) |
+| Severity | wrong result — false PASS on the highest-risk firewall rules |
+
+**Error** — no error. With fixtures `cis-test-open-all-protocols` (`allow { protocol = "all" }`) and
+`cis-test-open-port-range` (tcp `20-25`), both from `0.0.0.0/0`:
+
+```
+V55 output: default-allow-ssh/rdp rules only — neither fixture listed
+V56 output: OPEN DB PORT: …/cis-test-open-mysql            — all-protocols rule not listed
+```
+
+**Cause** — The jq matched only a literal port string equal to `"22"`, `"3389"`, etc. A rule
+with `IPProtocol: "all"`, a tcp rule with no `ports` (every port), or a range like `"20-25"` or
+`"0-65535"` never matched. IPv6 `::/0` was also ignored.
+
+**Fix** — A `covers($n)` jq function tests each port or range. A rule is flagged if it is open to
+`0.0.0.0/0` or `::/0` and allows protocol `all`, or tcp with no port list, or a port/range covering
+a watched port. Verified: V55 lists both fixtures plus all 11 previously-found rules (13 total);
+V56 lists `cis-test-open-mysql` and `cis-test-open-all-protocols`.
+
+## BUG-018 — V66 ignores project-level OS Login: false FAIL on every VM that inherits it
+
+| | |
+|---|---|
+| Found | 2026-09-13, org pass against fixtures |
+| Component | `docs/cis-ig1-cli-validation.md` — V66 |
+| Check | V66 |
+| Severity | wrong result — false FAIL (OS Login is normally set at project level) |
+
+**Error**
+
+```
+V66 FAIL
+NO OS LOGIN: //compute.googleapis.com/projects/iq9-gcp-dev-yamato/zones/us-west1-a/instances/cis-test-noncompliant-vm
+$ gcloud compute project-info describe --project=iq9-gcp-dev-yamato  →  enable-oslogin = true
+```
+
+**Cause** — Only instance metadata was read. OS Login is effective if the instance sets
+`enable-oslogin`, **or, when it doesn't, its project does** — the usual configuration.
+
+**Fix** — Also reads project metadata (Asset type `compute.googleapis.com/Project`, via
+`jq --slurpfile`), and computes the effective value as instance value, else project value, else
+off. The org policy is deliberately not treated as proof (it isn't retroactive). Verified: V66 PASS
+for the fixture VM.
+
+## BUG-019 — V67 looks only for the deprecated `sshKeys` key: false PASS
+
+| | |
+|---|---|
+| Found | 2026-09-13, project pass against fixtures |
+| Component | `docs/cis-ig1-cli-validation.md` — V67 |
+| Check | V67 |
+| Severity | wrong result — false PASS with project-wide SSH keys present |
+
+**Error**
+
+```
+V67 PASS
+$ gcloud compute project-info describe --project=iq9-gcp-dev-yamato --format="value(commonInstanceMetadata.items[].key)"
+enable-oslogin;ssh-keys
+```
+
+**Cause** — `grep -qw "sshKeys"` matches only the legacy key. Current tooling (console, gcloud,
+Terraform) writes `ssh-keys`.
+
+**Fix** — Key list split on `;` and matched exactly against `ssh-keys|sshKeys`. Verified:
+`PROJECT-WIDE SSH KEYS: iq9-gcp-dev-yamato ssh-keys`, V67 FAIL.
+
+## BUG-020 — V147 skips exactly the VMs whose agent can't be verified: false PASS
+
+| | |
+|---|---|
+| Found | 2026-09-13, project pass against fixtures |
+| Component | `docs/cis-ig1-cli-validation.md` — V147 |
+| Check | V147 |
+| Severity | wrong result — false PASS |
+
+**Error**
+
+```
+V147 PASS   (project has a running VM; OS Config API is not enabled in the project)
+```
+
+**Cause** — The loop started from `gcloud compute instances os-inventory list-instances`, which
+returns only VMs that already report OS inventory. A VM with no OS Config agent — or in a project
+without the OS Config API — never entered the loop. Errors from `describe` were also discarded
+(`2>/dev/null`), and the jq path `.items.installedPackages` didn't match gcloud's output shape.
+
+**Fix** — Loops over `gcloud compute instances list`. A VM whose inventory can't be read reports
+`NO OS INVENTORY (agent presence unverifiable)`; otherwise the whole inventory document is searched
+for AV package names, independent of its layout. Verified: V147 FAIL
+`NO OS INVENTORY (agent presence unverifiable): cis-test-noncompliant-vm`.
