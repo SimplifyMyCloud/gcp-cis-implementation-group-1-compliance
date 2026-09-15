@@ -117,7 +117,7 @@ gcloud projects list --format="value(projectId)" | while read -r p; do
 done
 ```
 
-Edit `./audit-state/audit.env` — three values: `BACKUP_BUCKET`, `TFSTATE_BUCKET`, `BACKUP_PROJECT`. It also carries `EXCLUDE_PROJECTS=^sys-`: projects matching it (Apps Script's `sys-…` projects by default) are never audited; `none` audits everything. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
+Edit `./audit-state/audit.env` — the eleven prerequisite values listed in [CLI validation](cis-ig1-cli-validation.md) (buckets, backup project, approved registries, allowed locations, retention and dormancy thresholds, backup identity, production projects and regions). It also carries `EXCLUDE_PROJECTS=^sys-`: projects matching it (Apps Script's `sys-…` projects by default) are never audited; `none` audits everything. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
 
 ## A9a. Shortcut — the whole audit in one command
 

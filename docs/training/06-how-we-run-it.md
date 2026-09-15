@@ -16,15 +16,15 @@ export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
 go run audit-run.go -scope=org -org=$ORG_ID -pack ./audit-state/org
 ```
 
-68 checks. Results stream as they land:
+71 checks. Results stream as they land:
 
 ```
-Running 83 checks against organization 123456789012
+Running 86 checks against organization 123456789012
 Audit host project my-audit-project (123456789)
 
-  [  1/ 68] V43    REVIEW  4.1#2     Baseline enforced through org policy constraints
-  [  2/ 68] V27    PASS    3.3#1     No publicly accessible Cloud Storage buckets
-  [  3/ 68] V55    FAIL    4.4#1     No firewall rules allowing the internet to SSH or R…
+  [  1/ 71] V43    REVIEW  4.1#2     Baseline enforced through org policy constraints
+  [  2/ 71] V27    PASS    3.3#1     No publicly accessible Cloud Storage buckets
+  [  3/ 71] V55    FAIL    4.4#1     No firewall rules allowing the internet to SSH or R…
   ...
 ```
 
@@ -38,13 +38,13 @@ go run audit-run.go -scope=project -org=$ORG_ID \
   -project=$PROJECT -pack ./audit-state/projects/$PROJECT
 ```
 
-90 checks, against that project only. Repeat per project.
+87 checks, against that project only. Repeat per project.
 
 ---
 
 ## Running it live
 
-For a demo you do not want to wait for 68 checks. Pick four that hit different subsystems and finish in seconds:
+For a demo you do not want to wait for 71 checks. Pick four that hit different subsystems and finish in seconds:
 
 ```bash
 go run audit-run.go -scope=org -org=$ORG_ID \
@@ -88,7 +88,7 @@ That prints every check and how it is classified — `runnable`, `review`, `need
 | `N/A` | Product or API absent — not a failure |
 | `DENIED` | Missing permission — fix before trusting anything |
 
-**Only 39 of 188 are auto-scored.** The rest are `REVIEW` with output saved verbatim.
+**109 of 188 are auto-scored.** The other 79 are `REVIEW` with output saved verbatim.
 
 That ratio is deliberate. No machine can tell you whether your org policy list matches your intended baseline. A confident wrong verdict is worse in an audit than an honest "you decide."
 

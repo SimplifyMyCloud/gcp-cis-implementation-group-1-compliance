@@ -16,8 +16,8 @@ Every requirement carries a marker showing how it gets checked and who does it.
 
 | | Group | Count | How |
 |---|---|---|---|
-| ⚙️ | **Automated** | 41 | `audit-run.go` runs it and scores it pass/fail |
-| 🔍 | **CLI, human reads it** | 147 | `audit-run.go` runs it and saves the output; you judge the result |
+| ⚙️ | **Automated** | 109 | `audit-run.go` runs it and scores it pass/fail |
+| 🔍 | **CLI, human reads it** | 79 | `audit-run.go` runs it and saves the output; you judge the result |
 | 🖥️ | **GCP, no CLI** | 30 | Admin Console, image build, or a test you perform by hand |
 | 👥 | **Process and people** | 72 | Answered by a conversation and a document, not a command |
 
@@ -97,10 +97,10 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 1.1 Establish and Maintain Detailed Enterprise Asset Inventory
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Cloud Asset Inventory feed configured at **organization** scope → [V1](cis-ig1-cli-validation.md#v1)
-- [ ] 🔍 Feed exports to BigQuery or Cloud Storage on a scheduled basis → [V2](cis-ig1-cli-validation.md#v2)
-- [ ] 🔍 All projects enumerated, including those created flat under the org node → [V3](cis-ig1-cli-validation.md#v3)
-- [ ] 🔍 Inventory covers Compute Engine, GKE, Cloud SQL, Cloud Run, Cloud Functions, App Engine, Cloud Storage → [V4](cis-ig1-cli-validation.md#v4)
+- [ ] ⚙️ Cloud Asset Inventory feed configured at **organization** scope → [V1](cis-ig1-cli-validation.md#v1)
+- [ ] ⚙️ Feed exports to BigQuery or Cloud Storage on a scheduled basis → [V2](cis-ig1-cli-validation.md#v2)
+- [ ] ⚙️ All projects enumerated, including those created flat under the org node → [V3](cis-ig1-cli-validation.md#v3)
+- [ ] ⚙️ Inventory covers Compute Engine, GKE, Cloud SQL, Cloud Run, Cloud Functions, App Engine, Cloud Storage → [V4](cis-ig1-cli-validation.md#v4)
 - [ ] ⚙️ Required labels enforced (owner, environment, cost centre, data classification) → [V5](cis-ig1-cli-validation.md#v5)
 - [ ] 🔍 Shared VPC host and service project relationships mapped → [V6](cis-ig1-cli-validation.md#v6)
 - [ ] 🖥️ Inventory reviewed and recertified at least every six months
@@ -109,7 +109,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
 - [ ] 🖥️ Documented process for resources found without an owner or approval
-- [ ] 🔍 Projects with no billing account or in `DELETE_REQUESTED` state dispositioned → [V7](cis-ig1-cli-validation.md#v7)
+- [ ] ⚙️ Projects with no billing account or in `DELETE_REQUESTED` state dispositioned → [V7](cis-ig1-cli-validation.md#v7)
 - [ ] ⚙️ Orphaned resources reconciled (unattached disks, unused static IPs, idle forwarding rules) → [V8](cis-ig1-cli-validation.md#v8)
 - [ ] 🖥️ Unlabelled or unattributable resources escalated within a defined window
 - [ ] 🖥️ Remediation actions recorded (removed, quarantined, or formally accepted)
@@ -121,12 +121,12 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 2.1 Establish and Maintain a Software Inventory
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 VM Manager OS inventory enabled; OS Config agent present on all Compute Engine instances → [V9](cis-ig1-cli-validation.md#v9)
+- [ ] ⚙️ VM Manager OS inventory enabled; OS Config agent present on all Compute Engine instances → [V9](cis-ig1-cli-validation.md#v9)
 - [ ] 🔍 Custom image and image family catalogue maintained with build provenance → [V10](cis-ig1-cli-validation.md#v10)
 - [ ] 🔍 Artifact Registry / Container Registry image inventory captured → [V11](cis-ig1-cli-validation.md#v11)
-- [ ] 🔍 GKE cluster and node pool versions recorded → [V12](cis-ig1-cli-validation.md#v12)
-- [ ] 🔍 Cloud Functions, Cloud Run, and App Engine runtime versions recorded → [V13](cis-ig1-cli-validation.md#v13)
-- [ ] 🔍 Cloud SQL engine and version recorded per instance → [V14](cis-ig1-cli-validation.md#v14)
+- [ ] ⚙️ GKE cluster and node pool versions recorded → [V12](cis-ig1-cli-validation.md#v12)
+- [ ] ⚙️ Cloud Functions, Cloud Run, and App Engine runtime versions recorded → [V13](cis-ig1-cli-validation.md#v13)
+- [ ] ⚙️ Cloud SQL engine and version recorded per instance → [V14](cis-ig1-cli-validation.md#v14)
 - [ ] 👥 Inventory refreshed automatically, not by manual survey
 
 ### 2.2 Ensure Authorized Software is Currently Supported
@@ -134,8 +134,8 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] ⚙️ No instances running end-of-life guest OS (CentOS 7, Debian 9/10, out-of-window Ubuntu) → [V15](cis-ig1-cli-validation.md#v15)
 - [ ] ⚙️ No GKE clusters on versions past end-of-life; all enrolled in a release channel → [V16](cis-ig1-cli-validation.md#v16)
-- [ ] 🔍 No Cloud Functions or App Engine services on decommissioned runtimes → [V17](cis-ig1-cli-validation.md#v17)
-- [ ] 🔍 No Cloud SQL instances on unsupported database versions → [V18](cis-ig1-cli-validation.md#v18)
+- [ ] ⚙️ No Cloud Functions or App Engine services on decommissioned runtimes → [V17](cis-ig1-cli-validation.md#v17)
+- [ ] ⚙️ No Cloud SQL instances on unsupported database versions → [V18](cis-ig1-cli-validation.md#v18)
 - [ ] 🔍 Deprecated custom images not referenced by any instance template or MIG → [V19](cis-ig1-cli-validation.md#v19)
 - [ ] 👥 Exception register for unsupported software with documented compensating controls
 
@@ -144,9 +144,9 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 👥 Documented process for removing unapproved software from the environment
 - [ ] 👥 Marketplace deployment restricted to approved solutions
-- [ ] 🔍 Container images sourced only from approved registries → [V20](cis-ig1-cli-validation.md#v20)
-- [ ] 🔍 Binary Authorization policy in place for GKE / Cloud Run (or a documented equivalent gate) → [V21](cis-ig1-cli-validation.md#v21)
-- [ ] 🔍 **↺ existing estate:** workloads already running unattested identified and rolled → [V22](cis-ig1-cli-validation.md#v22)
+- [ ] ⚙️ Container images sourced only from approved registries → [V20](cis-ig1-cli-validation.md#v20)
+- [ ] ⚙️ Binary Authorization policy in place for GKE / Cloud Run (or a documented equivalent gate) → [V21](cis-ig1-cli-validation.md#v21)
+- [ ] ⚙️ **↺ existing estate:** workloads already running unattested identified and rolled → [V22](cis-ig1-cli-validation.md#v22)
 - [ ] 👥 Findings tracked to closure with a defined remediation window
 
 ---
@@ -158,7 +158,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 👥 Written data management process covering sensitivity, ownership, handling, retention, disposal
 - [ ] 👥 Process references GCP storage services in use
-- [ ] 🔍 Data residency requirements defined and mapped to regions → [V23](cis-ig1-cli-validation.md#v23)
+- [ ] ⚙️ Data residency requirements defined and mapped to regions → [V23](cis-ig1-cli-validation.md#v23)
 - [ ] 👥 Reviewed annually with review date recorded
 
 ### 3.2 Establish and Maintain a Data Inventory
@@ -167,18 +167,18 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 - [ ] 🔍 Sensitive Data Protection (Cloud DLP) discovery configured across Cloud Storage and BigQuery → [V24](cis-ig1-cli-validation.md#v24)
 - [ ] 🖥️ Cloud SQL and other data stores included in the inventory
 - [ ] ⚙️ Sensitivity classification recorded as resource labels or in a central register → [V25](cis-ig1-cli-validation.md#v25)
-- [ ] 🔍 Data location recorded per store for residency verification → [V26](cis-ig1-cli-validation.md#v26)
+- [ ] ⚙️ Data location recorded per store for residency verification → [V26](cis-ig1-cli-validation.md#v26)
 - [ ] 🖥️ Inventory refreshed on a defined schedule
 
 ### 3.3 Configure Data Access Control Lists
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
 - [ ] ⚙️ No Cloud Storage buckets granting `allUsers` or `allAuthenticatedUsers` → [V27](cis-ig1-cli-validation.md#v27)
-- [ ] 🔍 `constraints/storage.publicAccessPrevention` enforced at org level → [V28](cis-ig1-cli-validation.md#v28)
+- [ ] ⚙️ `constraints/storage.publicAccessPrevention` enforced at org level → [V28](cis-ig1-cli-validation.md#v28)
 - [ ] ⚙️ **↺ existing estate:** all currently public buckets and datasets found and remediated → [V29](cis-ig1-cli-validation.md#v29)
 - [ ] ⚙️ **↺ existing estate:** all buckets migrated off legacy per-object ACLs → [V30](cis-ig1-cli-validation.md#v30)
 - [ ] ⚙️ **↺ existing estate:** all pre-existing external-domain IAM grants reviewed and removed → [V31](cis-ig1-cli-validation.md#v31)
-- [ ] 🔍 `constraints/storage.uniformBucketLevelAccess` enforced; legacy object ACLs retired → [V32](cis-ig1-cli-validation.md#v32)
+- [ ] ⚙️ `constraints/storage.uniformBucketLevelAccess` enforced; legacy object ACLs retired → [V32](cis-ig1-cli-validation.md#v32)
 - [ ] ⚙️ No BigQuery datasets shared to `allUsers` or `allAuthenticatedUsers` → [V33](cis-ig1-cli-validation.md#v33)
 - [ ] ⚙️ Access granted via groups and predefined/custom roles, not basic roles → [V34](cis-ig1-cli-validation.md#v34)
 - [ ] 🔍 `constraints/iam.allowedPolicyMemberDomains` enforced at org level → [V35](cis-ig1-cli-validation.md#v35)
@@ -191,8 +191,8 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 - [ ] 👥 Retention periods defined per data class and documented
 - [ ] ⚙️ Object Lifecycle Management rules applied to Cloud Storage buckets → [V37](cis-ig1-cli-validation.md#v37)
 - [ ] ⚙️ BigQuery default table and partition expiration configured on datasets → [V38](cis-ig1-cli-validation.md#v38)
-- [ ] 🔍 Cloud SQL backup retention windows set to the defined period → [V39](cis-ig1-cli-validation.md#v39)
-- [ ] 🔍 Log bucket retention set explicitly (not left at the `_Default` 30 days) → [V40](cis-ig1-cli-validation.md#v40)
+- [ ] ⚙️ Cloud SQL backup retention windows set to the defined period → [V39](cis-ig1-cli-validation.md#v39)
+- [ ] ⚙️ Log bucket retention set explicitly (not left at the `_Default` 30 days) → [V40](cis-ig1-cli-validation.md#v40)
 - [ ] 🔍 Buckets and datasets with no retention rule identified and remediated → [V41](cis-ig1-cli-validation.md#v41)
 
 ### 3.5 Securely Dispose of Data
@@ -224,13 +224,13 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
 - [ ] ⚙️ Default VPC network removed from all projects → [V46](cis-ig1-cli-validation.md#v46)
-- [ ] 🔍 `constraints/compute.skipDefaultNetworkCreation` enforced → [V47](cis-ig1-cli-validation.md#v47)
+- [ ] ⚙️ `constraints/compute.skipDefaultNetworkCreation` enforced → [V47](cis-ig1-cli-validation.md#v47)
 - [ ] 🔍 **↺ existing estate:** default network deleted from every existing project → [V48](cis-ig1-cli-validation.md#v48)
 - [ ] ⚙️ **↺ existing estate:** legacy and auto-mode VPCs identified and converted → [V49](cis-ig1-cli-validation.md#v49)
 - [ ] ⚙️ Default firewall rules deleted (`default-allow-ssh`, `default-allow-rdp`, `default-allow-icmp`, `default-allow-internal`) → [V50](cis-ig1-cli-validation.md#v50)
 - [ ] 🔍 Auto-mode VPCs converted to custom-mode; no legacy networks remain → [V51](cis-ig1-cli-validation.md#v51)
 - [ ] 👥 Documented network baseline covering subnets, routes, peering, and firewall standards
-- [ ] 🔍 `constraints/compute.restrictVpcPeering` and Shared VPC constraints applied as required → [V52](cis-ig1-cli-validation.md#v52)
+- [ ] ⚙️ `constraints/compute.restrictVpcPeering` and Shared VPC constraints applied as required → [V52](cis-ig1-cli-validation.md#v52)
 - [ ] ⚙️ Firewall rules logging enabled on rules governing sensitive paths → [V53](cis-ig1-cli-validation.md#v53)
 
 ### 4.3 Configure Automatic Session Locking on Enterprise Assets
@@ -238,7 +238,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 🖥️ Google Cloud session length configured in Admin Console (reauthentication frequency set, not "never")
 - [ ] 🖥️ Reauthentication policy applied to Google Cloud CLI and API access
-- [ ] 🔍 IAP session duration configured for IAP-protected resources → [V54](cis-ig1-cli-validation.md#v54)
+- [ ] ⚙️ IAP session duration configured for IAP-protected resources → [V54](cis-ig1-cli-validation.md#v54)
 - [ ] 🖥️ Shell idle timeout set in the baked VM image for interactive sessions
 
 ### 4.4 Implement and Manage a Firewall on Servers
@@ -247,28 +247,28 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 - [ ] ⚙️ No firewall rules permitting `0.0.0.0/0` to TCP 22 or TCP 3389 → [V55](cis-ig1-cli-validation.md#v55)
 - [ ] ⚙️ No firewall rules permitting `0.0.0.0/0` to database ports (3306, 5432, 1433, 27017, 6379) → [V56](cis-ig1-cli-validation.md#v56)
 - [ ] 🔍 Default-deny ingress posture with explicit allow rules → [V57](cis-ig1-cli-validation.md#v57)
-- [ ] 🔍 Egress rules constrained rather than default allow-all → [V58](cis-ig1-cli-validation.md#v58)
+- [ ] ⚙️ Egress rules constrained rather than default allow-all → [V58](cis-ig1-cli-validation.md#v58)
 - [ ] ⚙️ Rules scoped by network tag or service account rather than broad IP ranges → [V59](cis-ig1-cli-validation.md#v59)
-- [ ] 🔍 Cloud SQL public IP disabled (`constraints/sql.restrictPublicIp`); authorized networks not `0.0.0.0/0` → [V60](cis-ig1-cli-validation.md#v60)
+- [ ] ⚙️ Cloud SQL public IP disabled (`constraints/sql.restrictPublicIp`); authorized networks not `0.0.0.0/0` → [V60](cis-ig1-cli-validation.md#v60)
 - [ ] ⚙️ **↺ existing estate:** existing Cloud SQL instances with public IP remediated → [V61](cis-ig1-cli-validation.md#v61)
 - [ ] 🔍 **↺ existing estate:** existing firewall rules exposing 22/3389/DB ports to `0.0.0.0/0` removed → [V62](cis-ig1-cli-validation.md#v62)
-- [ ] 🔍 GKE control plane authorized networks configured; private clusters in use → [V63](cis-ig1-cli-validation.md#v63)
+- [ ] ⚙️ GKE control plane authorized networks configured; private clusters in use → [V63](cis-ig1-cli-validation.md#v63)
 - [ ] ⚙️ Cloud Armor policies applied to externally exposed load balancers → [V64](cis-ig1-cli-validation.md#v64)
 
 ### 4.6 Securely Manage Enterprise Assets and Software
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 OS Login enforced org-wide (`constraints/compute.requireOsLogin`); project-wide SSH keys retired → [V65](cis-ig1-cli-validation.md#v65)
+- [ ] ⚙️ OS Login enforced org-wide (`constraints/compute.requireOsLogin`); project-wide SSH keys retired → [V65](cis-ig1-cli-validation.md#v65)
 - [ ] ⚙️ **↺ existing estate:** existing VMs without OS Login identified and remediated → [V66](cis-ig1-cli-validation.md#v66)
 - [ ] ⚙️ **↺ existing estate:** project-wide SSH keys removed from every existing project → [V67](cis-ig1-cli-validation.md#v67)
 - [ ] ⚙️ **↺ existing estate:** existing VMs with external IPs migrated behind IAP → [V68](cis-ig1-cli-validation.md#v68)
 - [ ] ⚙️ **↺ existing estate:** existing non-Shielded VMs replaced (requires stop or rebuild) → [V69](cis-ig1-cli-validation.md#v69)
-- [ ] 🔍 Serial port access disabled (`constraints/compute.disableSerialPortAccess`) → [V70](cis-ig1-cli-validation.md#v70)
+- [ ] ⚙️ Serial port access disabled (`constraints/compute.disableSerialPortAccess`) → [V70](cis-ig1-cli-validation.md#v70)
 - [ ] 🔍 External IPs restricted (`constraints/compute.vmExternalIpAccess`) → [V71](cis-ig1-cli-validation.md#v71)
 - [ ] 🔍 IAP TCP forwarding used for SSH/RDP; no public-IP bastion hosts → [V72](cis-ig1-cli-validation.md#v72)
-- [ ] 🔍 Shielded VM enforced (`constraints/compute.requireShieldedVm`) → [V73](cis-ig1-cli-validation.md#v73)
-- [ ] 🔍 IP forwarding restricted (`constraints/compute.vmCanIpForward`) → [V74](cis-ig1-cli-validation.md#v74)
-- [ ] 🔍 GKE hardening: Workload Identity on, legacy ABAC off, basic auth off, client cert auth off, legacy metadata endpoints off, Shielded GKE nodes on → [V75](cis-ig1-cli-validation.md#v75)
+- [ ] ⚙️ Shielded VM enforced (`constraints/compute.requireShieldedVm`) → [V73](cis-ig1-cli-validation.md#v73)
+- [ ] ⚙️ IP forwarding restricted (`constraints/compute.vmCanIpForward`) → [V74](cis-ig1-cli-validation.md#v74)
+- [ ] ⚙️ GKE hardening: Workload Identity on, legacy ABAC off, basic auth off, client cert auth off, legacy metadata endpoints off, Shielded GKE nodes on → [V75](cis-ig1-cli-validation.md#v75)
 - [ ] 👥 Administrative changes made through IaC pipelines with review, not ad hoc console access
 - [ ] ⚙️ Secrets held in Secret Manager, not in instance metadata, environment variables, or repositories → [V76](cis-ig1-cli-validation.md#v76)
 
@@ -277,11 +277,11 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] ⚙️ Default Compute Engine service account stripped of `roles/editor` in every project → [V77](cis-ig1-cli-validation.md#v77)
 - [ ] ⚙️ Default App Engine service account privileges reduced → [V78](cis-ig1-cli-validation.md#v78)
-- [ ] 🔍 `constraints/iam.automaticIamGrantsForDefaultServiceAccounts` enforced → [V79](cis-ig1-cli-validation.md#v79)
+- [ ] ⚙️ `constraints/iam.automaticIamGrantsForDefaultServiceAccounts` enforced → [V79](cis-ig1-cli-validation.md#v79)
 - [ ] 🔍 **↺ existing estate:** `roles/editor` stripped from default service accounts in every existing project → [V80](cis-ig1-cli-validation.md#v80)
 - [ ] ⚙️ **↺ existing estate:** workloads still running as a default service account migrated → [V81](cis-ig1-cli-validation.md#v81)
 - [ ] 🔍 Workloads run as purpose-built service accounts, not the default → [V82](cis-ig1-cli-validation.md#v82)
-- [ ] 🔍 Default GKE node service account replaced or scoped down → [V83](cis-ig1-cli-validation.md#v83)
+- [ ] ⚙️ Default GKE node service account replaced or scoped down → [V83](cis-ig1-cli-validation.md#v83)
 - [ ] 🔍 Cloud SQL default database users reviewed and passwords rotated → [V84](cis-ig1-cli-validation.md#v84)
 - [ ] 🔍 Default network and default firewall rules removed (cross-reference 4.2) → [V85](cis-ig1-cli-validation.md#v85)
 
@@ -292,8 +292,8 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 5.1 Establish and Maintain an Inventory of Accounts
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Full IAM principal inventory across org, folder, project, and resource-level bindings → [V86](cis-ig1-cli-validation.md#v86)
-- [ ] 🔍 Conditional IAM bindings included in the inventory → [V87](cis-ig1-cli-validation.md#v87)
+- [ ] ⚙️ Full IAM principal inventory across org, folder, project, and resource-level bindings → [V86](cis-ig1-cli-validation.md#v86)
+- [ ] ⚙️ Conditional IAM bindings included in the inventory → [V87](cis-ig1-cli-validation.md#v87)
 - [ ] 🔍 Service account inventory maintained with owner and purpose per account → [V88](cis-ig1-cli-validation.md#v88)
 - [ ] 🖥️ Super admin accounts in Cloud Identity / Workspace enumerated and justified
 - [ ] 🔍 External (non-domain) principals with any binding identified → [V89](cis-ig1-cli-validation.md#v89)
@@ -303,12 +303,12 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
 - [ ] 👥 No shared or generic human accounts in Cloud Identity / Workspace
-- [ ] 🔍 `constraints/iam.disableServiceAccountKeyCreation` enforced at org level → [V90](cis-ig1-cli-validation.md#v90)
+- [ ] ⚙️ `constraints/iam.disableServiceAccountKeyCreation` enforced at org level → [V90](cis-ig1-cli-validation.md#v90)
 - [ ] ⚙️ **↺ existing estate:** every pre-existing user-managed key inventoried — *this is the actual exposure, not new key creation* → [V91](cis-ig1-cli-validation.md#v91)
 - [ ] 🔍 **↺ existing estate:** unused keys deleted; in-use keys replaced with federation and then deleted → [V92](cis-ig1-cli-validation.md#v92)
 - [ ] 🔍 Existing user-managed service account keys inventoried, aged, and eliminated → [V93](cis-ig1-cli-validation.md#v93)
 - [ ] 🔍 Workload Identity Federation / Workload Identity used in place of exported key files → [V94](cis-ig1-cli-validation.md#v94)
-- [ ] 🔍 Any remaining static credentials stored in Secret Manager with rotation configured → [V95](cis-ig1-cli-validation.md#v95)
+- [ ] ⚙️ Any remaining static credentials stored in Secret Manager with rotation configured → [V95](cis-ig1-cli-validation.md#v95)
 - [ ] 👥 Break-glass credentials uniquely held, sealed, and their use alerted on
 
 ### 5.3 Disable Dormant Accounts
@@ -316,7 +316,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 🖥️ Dormancy threshold defined (e.g. 45 days without authentication)
 - [ ] 🔍 Human account activity assessed via Cloud Audit Logs / Admin Console reports → [V96](cis-ig1-cli-validation.md#v96)
-- [ ] 🔍 Service account activity assessed via IAM activity analyser and authentication logs → [V97](cis-ig1-cli-validation.md#v97)
+- [ ] ⚙️ Service account activity assessed via IAM activity analyser and authentication logs → [V97](cis-ig1-cli-validation.md#v97)
 - [ ] 🔍 Unused service accounts disabled before deletion, then deleted → [V98](cis-ig1-cli-validation.md#v98)
 - [ ] 🖥️ Dormant account review runs on a recurring schedule, not on request
 - [ ] 🖥️ Departed-employee bindings removed as part of the leaver process
@@ -401,7 +401,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
 - [ ] 👥 Remediation SLAs defined by severity
-- [ ] 🔍 Findings routed to an owning team automatically, not surfaced only in a console → [V115](cis-ig1-cli-validation.md#v115)
+- [ ] ⚙️ Findings routed to an owning team automatically, not surfaced only in a console → [V115](cis-ig1-cli-validation.md#v115)
 - [ ] 👥 Risk acceptance process with expiry dates for exceptions
 - [ ] 👥 Findings tracked to closure with evidence
 - [ ] 👥 Monthly review of open findings against SLA
@@ -409,18 +409,18 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 7.3 Perform Automated Operating System Patch Management
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 VM Manager patch deployments configured on a recurring schedule → [V116](cis-ig1-cli-validation.md#v116)
+- [ ] ⚙️ VM Manager patch deployments configured on a recurring schedule → [V116](cis-ig1-cli-validation.md#v116)
 - [ ] 🔍 OS Config agent present on all instances; coverage gaps identified and closed → [V117](cis-ig1-cli-validation.md#v117)
-- [ ] 🔍 Patch compliance reporting reviewed → [V118](cis-ig1-cli-validation.md#v118)
+- [ ] ⚙️ Patch compliance reporting reviewed → [V118](cis-ig1-cli-validation.md#v118)
 - [ ] 🖥️ Image rebake cadence defined so new instances launch pre-patched
 - [ ] 🔍 Instance templates and MIGs updated to reference current images → [V119](cis-ig1-cli-validation.md#v119)
 - [ ] ⚙️ GKE node auto-upgrade enabled on all node pools → [V120](cis-ig1-cli-validation.md#v120)
-- [ ] 🔍 Cloud SQL maintenance windows configured with automatic minor version updates → [V121](cis-ig1-cli-validation.md#v121)
+- [ ] ⚙️ Cloud SQL maintenance windows configured with automatic minor version updates → [V121](cis-ig1-cli-validation.md#v121)
 
 ### 7.4 Perform Automated Application Patch Management
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Artifact Analysis vulnerability scanning enabled on Artifact Registry → [V122](cis-ig1-cli-validation.md#v122)
+- [ ] ⚙️ Artifact Analysis vulnerability scanning enabled on Artifact Registry → [V122](cis-ig1-cli-validation.md#v122)
 - [ ] 👥 Container base image update process defined and automated
 - [ ] 👥 Application dependency scanning in the build pipeline
 - [ ] 🔍 Cloud Functions and Cloud Run redeployed onto supported runtimes on a schedule → [V123](cis-ig1-cli-validation.md#v123)
@@ -443,15 +443,15 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 8.2 Collect Audit Logs
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Admin Activity audit logs confirmed flowing for all projects → [V126](cis-ig1-cli-validation.md#v126)
-- [ ] 🔍 **Data Access audit logs enabled** (`ADMIN_READ`, `DATA_READ`, `DATA_WRITE`) — off by default → [V127](cis-ig1-cli-validation.md#v127)
-- [ ] 🔍 **↺ not retroactive:** enabling starts the record now; pre-existing history is unrecoverable — note the gap start date as an audit finding → [V128](cis-ig1-cli-validation.md#v128)
+- [ ] ⚙️ Admin Activity audit logs confirmed flowing for all projects → [V126](cis-ig1-cli-validation.md#v126)
+- [ ] ⚙️ **Data Access audit logs enabled** (`ADMIN_READ`, `DATA_READ`, `DATA_WRITE`) — off by default → [V127](cis-ig1-cli-validation.md#v127)
+- [ ] ⚙️ **↺ not retroactive:** enabling starts the record now; pre-existing history is unrecoverable — note the gap start date as an audit finding → [V128](cis-ig1-cli-validation.md#v128)
 - [ ] 🔍 System Event and Policy Denied logs captured → [V129](cis-ig1-cli-validation.md#v129)
-- [ ] 🔍 Aggregated log sink configured at **organization** level with `includeChildren = true` → [V130](cis-ig1-cli-validation.md#v130)
+- [ ] ⚙️ Aggregated log sink configured at **organization** level with `includeChildren = true` → [V130](cis-ig1-cli-validation.md#v130)
 - [ ] 🔍 Sink service account permissions verified — confirm logs are arriving at the destination → [V131](cis-ig1-cli-validation.md#v131)
 - [ ] ⚙️ VPC Flow Logs enabled on subnets carrying sensitive traffic → [V132](cis-ig1-cli-validation.md#v132)
-- [ ] 🔍 Cloud DNS logging, Cloud NAT logging, and firewall rules logging enabled → [V133](cis-ig1-cli-validation.md#v133)
-- [ ] 🔍 GKE audit logs and Cloud SQL logs captured → [V134](cis-ig1-cli-validation.md#v134)
+- [ ] ⚙️ Cloud DNS logging, Cloud NAT logging, and firewall rules logging enabled → [V133](cis-ig1-cli-validation.md#v133)
+- [ ] ⚙️ GKE audit logs and Cloud SQL logs captured → [V134](cis-ig1-cli-validation.md#v134)
 - [ ] ⚙️ Load balancer and Cloud Armor request logging enabled → [V135](cis-ig1-cli-validation.md#v135)
 - [ ] 🔍 Alerting on org policy changes, IAM changes, service account key creation, custom role changes, and audit config changes → [V136](cis-ig1-cli-validation.md#v136)
 
@@ -460,8 +460,8 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 🔍 Log bucket retention set explicitly to the defined period (not the 30-day `_Default`) → [V137](cis-ig1-cli-validation.md#v137)
 - [ ] 👥 Sink destination sized and budgeted for the retention period
-- [ ] 🔍 Logs stored in a **dedicated logging project** with IAM separated from workload projects → [V138](cis-ig1-cli-validation.md#v138)
-- [ ] 🔍 Bucket Lock retention policy applied to the log destination for tamper resistance → [V139](cis-ig1-cli-validation.md#v139)
+- [ ] ⚙️ Logs stored in a **dedicated logging project** with IAM separated from workload projects → [V138](cis-ig1-cli-validation.md#v138)
+- [ ] ⚙️ Bucket Lock retention policy applied to the log destination for tamper resistance → [V139](cis-ig1-cli-validation.md#v139)
 - [ ] 🔍 No workload-project principals hold delete permission on log storage → [V140](cis-ig1-cli-validation.md#v140)
 - [ ] 🔍 Storage capacity and cost monitored with alerting before ingestion is throttled or dropped → [V141](cis-ig1-cli-validation.md#v141)
 
@@ -472,10 +472,10 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 9.2 Use DNS Filtering Services
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Cloud DNS response policies applied to VPC networks to block known-malicious domains → [V142](cis-ig1-cli-validation.md#v142)
-- [ ] 🔍 Workload egress routed through Cloud NAT or Secure Web Proxy rather than per-instance external IPs → [V143](cis-ig1-cli-validation.md#v143)
+- [ ] ⚙️ Cloud DNS response policies applied to VPC networks to block known-malicious domains → [V142](cis-ig1-cli-validation.md#v142)
+- [ ] ⚙️ Workload egress routed through Cloud NAT or Secure Web Proxy rather than per-instance external IPs → [V143](cis-ig1-cli-validation.md#v143)
 - [ ] 🔍 Egress firewall rules constrain outbound destinations → [V144](cis-ig1-cli-validation.md#v144)
-- [ ] 🔍 Cloud DNS logging enabled for visibility into resolution behaviour → [V145](cis-ig1-cli-validation.md#v145)
+- [ ] ⚙️ Cloud DNS logging enabled for visibility into resolution behaviour → [V145](cis-ig1-cli-validation.md#v145)
 - [ ] 🔍 Blocked-resolution events surfaced to a monitored destination → [V146](cis-ig1-cli-validation.md#v146)
 
 *Safeguard 9.1 is out of GCP scope — see appendix.*
@@ -515,37 +515,37 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 - [ ] 👥 Written recovery process covering each data-bearing service in use
 - [ ] 👥 RPO and RTO defined per workload tier
 - [ ] 👥 Recovery roles and escalation path named
-- [ ] 🔍 Terraform state backend versioning and recovery included in scope → [V152](cis-ig1-cli-validation.md#v152)
+- [ ] ⚙️ Terraform state backend versioning and recovery included in scope → [V152](cis-ig1-cli-validation.md#v152)
 - [ ] 👥 Process reviewed annually and after any recovery event
 
 ### 11.2 Perform Automated Backups
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Cloud SQL automated backups enabled with point-in-time recovery → [V153](cis-ig1-cli-validation.md#v153)
+- [ ] ⚙️ Cloud SQL automated backups enabled with point-in-time recovery → [V153](cis-ig1-cli-validation.md#v153)
 - [ ] ⚙️ Persistent disk snapshot schedules attached to all data-bearing disks → [V154](cis-ig1-cli-validation.md#v154)
 - [ ] 🔍 Cloud Storage versioning and soft delete enabled on data-bearing buckets → [V155](cis-ig1-cli-validation.md#v155)
 - [ ] 🔍 Backup for GKE configured where GKE holds persistent state → [V156](cis-ig1-cli-validation.md#v156)
-- [ ] 🔍 Firestore, Bigtable, Spanner, Filestore backups configured where in use → [V157](cis-ig1-cli-validation.md#v157)
+- [ ] ⚙️ Firestore, Bigtable, Spanner, Filestore backups configured where in use → [V157](cis-ig1-cli-validation.md#v157)
 - [ ] 🔍 Backup success and failure monitored with alerting — silent failure detected → [V158](cis-ig1-cli-validation.md#v158)
 - [ ] 👥 Backup frequency meets the defined RPO
 
 ### 11.3 Protect Recovery Data
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 Backup data encrypted, with CMEK where key control is required → [V159](cis-ig1-cli-validation.md#v159)
+- [ ] ⚙️ Backup data encrypted, with CMEK where key control is required → [V159](cis-ig1-cli-validation.md#v159)
 - [ ] 🔍 KMS key access separated from production workload identities → [V160](cis-ig1-cli-validation.md#v160)
-- [ ] 🔍 IAM on backup storage restricted to a dedicated backup role → [V161](cis-ig1-cli-validation.md#v161)
-- [ ] 🔍 No production workload service account holds delete permission on backups → [V162](cis-ig1-cli-validation.md#v162)
-- [ ] 🔍 **Bucket Lock** retention policy applied to backup buckets (WORM) → [V163](cis-ig1-cli-validation.md#v163)
+- [ ] ⚙️ IAM on backup storage restricted to a dedicated backup role → [V161](cis-ig1-cli-validation.md#v161)
+- [ ] ⚙️ No production workload service account holds delete permission on backups → [V162](cis-ig1-cli-validation.md#v162)
+- [ ] ⚙️ **Bucket Lock** retention policy applied to backup buckets (WORM) → [V163](cis-ig1-cli-validation.md#v163)
 - [ ] 🔍 Backup deletion events logged and alerted on → [V164](cis-ig1-cli-validation.md#v164)
 
 ### 11.4 Establish and Maintain an Isolated Instance of Recovery Data
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 At least one backup copy held in a **separate project** from the production workload → [V165](cis-ig1-cli-validation.md#v165)
-- [ ] 🔍 Backup project sits under a separate folder with distinct IAM inheritance → [V166](cis-ig1-cli-validation.md#v166)
+- [ ] ⚙️ At least one backup copy held in a **separate project** from the production workload → [V165](cis-ig1-cli-validation.md#v165)
+- [ ] ⚙️ Backup project sits under a separate folder with distinct IAM inheritance → [V166](cis-ig1-cli-validation.md#v166)
 - [ ] ⚙️ No shared credential can both access production and delete the isolated copy → [V167](cis-ig1-cli-validation.md#v167)
-- [ ] 🔍 Copy held in a different region, or in multi-region storage → [V168](cis-ig1-cli-validation.md#v168)
+- [ ] ⚙️ Copy held in a different region, or in multi-region storage → [V168](cis-ig1-cli-validation.md#v168)
 - [ ] 🖥️ Isolation verified by test — attempt access with a production identity and confirm denial
 - [ ] 🖥️ Restore from the isolated copy tested and dated
 
@@ -557,9 +557,9 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
 - [ ] 🔍 GKE control plane and node versions within the supported window → [V169](cis-ig1-cli-validation.md#v169)
-- [ ] 🔍 Classic VPN migrated to HA VPN; tunnels using current IKE version and ciphers → [V170](cis-ig1-cli-validation.md#v170)
-- [ ] 🔍 Load balancer SSL policies set to a modern TLS minimum; TLS 1.0/1.1 and weak ciphers disabled → [V171](cis-ig1-cli-validation.md#v171)
-- [ ] 🔍 Legacy (non-Application) load balancers migrated → [V172](cis-ig1-cli-validation.md#v172)
+- [ ] ⚙️ Classic VPN migrated to HA VPN; tunnels using current IKE version and ciphers → [V170](cis-ig1-cli-validation.md#v170)
+- [ ] ⚙️ Load balancer SSL policies set to a modern TLS minimum; TLS 1.0/1.1 and weak ciphers disabled → [V171](cis-ig1-cli-validation.md#v171)
+- [ ] ⚙️ Legacy (non-Application) load balancers migrated → [V172](cis-ig1-cli-validation.md#v172)
 - [ ] 🔍 Legacy networks eliminated; auto-mode VPCs converted to custom-mode → [V173](cis-ig1-cli-validation.md#v173)
 - [ ] 🔍 Cloud Armor rule sets current → [V174](cis-ig1-cli-validation.md#v174)
 - [ ] 👥 Deprecated Compute Engine API versions removed from tooling and IaC
@@ -598,7 +598,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 17.2 Establish and Maintain Contact Information for Reporting Security Incidents
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] 🔍 **Essential Contacts configured at organization level for the Security category** → [V181](cis-ig1-cli-validation.md#v181)
+- [ ] ⚙️ **Essential Contacts configured at organization level for the Security category** → [V181](cis-ig1-cli-validation.md#v181)
 - [ ] 🔍 Essential Contacts configured for Legal, Suspension, and Technical categories → [V182](cis-ig1-cli-validation.md#v182)
 - [ ] 🔍 Contacts point to monitored group addresses, not individuals → [V183](cis-ig1-cli-validation.md#v183)
 - [ ] 🔍 **↺ existing estate:** pre-existing contacts (personal addresses, departed employees) reviewed and replaced → [V184](cis-ig1-cli-validation.md#v184)

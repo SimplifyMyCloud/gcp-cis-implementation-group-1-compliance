@@ -38,7 +38,7 @@ Five organization checks, one per permission family. Any `DENIED` is a missing g
 go run audit-run.go -init-config ./audit-state/audit.env
 ```
 
-Three values only: `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT`. Everything else is discovered.
+Eleven prerequisite values — buckets, backup project, approved registries, allowed locations, retention and dormancy thresholds, backup identity, production projects and regions. The template names each with an example; the full table is in [CLI validation](cis-ig1-cli-validation.md). Everything else is discovered.
 
 **If one does not exist, write `none`, not blank.** Blank gives `SKIP` ("could not check"); `none` gives `FAIL`, which is the truth — no backup bucket is safeguard 11.3 failing.
 
@@ -53,11 +53,11 @@ In one command — org pass, project passes, rollup and score, filed into `scrat
 Or step by step:
 
 ```bash
-# Organization — 68 checks, once. Always first.
+# Organization — 71 checks, once. Always first.
 go run audit-run.go -scope=org -org="$ORG_ID" \
   -config ./audit-state/audit.env -pack ./audit-state/org
 
-# Project — 90 checks, once per project
+# Project — 87 checks, once per project
 gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt
 export PROJECT=<pick one>
 go run audit-run.go -scope=project -org="$ORG_ID" -project="$PROJECT" \
@@ -81,7 +81,7 @@ Each pack is three files: `01-automated-results.md` (the results table, then a *
 | `N/A` | Product absent, not a failure |
 | `DENIED` | Missing permission — fix before trusting anything |
 
-Only 41 of 188 are auto-scored. The rest are `REVIEW` with output saved, because no machine can tell you whether your org policy list matches your intended baseline.
+109 of 188 are auto-scored. The other 79 are `REVIEW` with output saved, because no machine can tell you whether your org policy list matches your intended baseline.
 
 Useful flags: `-list` · `-only V27,V91` · `-parallel 4` · `-timeout 10m` · `-review review.md` · `-format=md -out f.md`
 

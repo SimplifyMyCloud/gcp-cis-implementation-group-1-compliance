@@ -22,8 +22,8 @@ Every one of the 290 requirements carries a marker:
 
 | | Group | Count | How |
 |---|---|---|---|
-| ⚙️ | Automated | 41 | `audit-run.go` scores it |
-| 🔍 | CLI + human | 147 | Script runs it, you judge the output |
+| ⚙️ | Automated | 109 | `audit-run.go` scores it |
+| 🔍 | CLI + human | 79 | Script runs it, you judge the output |
 | 🖥️ | GCP manual | 30 | Console, image build, or a test you perform |
 | 👥 | Process & people | 72 | A conversation and a document |
 

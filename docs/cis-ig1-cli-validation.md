@@ -6,8 +6,8 @@ Every IG1 requirement falls into one of four categories. This document covers th
 
 | | Category | Count | Who runs it |
 |---|---|---|---|
-| **1** | CLI one-liner, unambiguous pass/fail | 39 | `audit-run.go` scores it |
-| **2** | CLI-verifiable, but the output needs judgement | 149 | `audit-run.go` runs it, saves the output, marks it **REVIEW** — a human decides |
+| **1** | CLI check, unambiguous pass/fail | 109 | `audit-run.go` scores it (103 PASS/FAIL, 6 evidence captures) |
+| **2** | CLI-verifiable, but the output needs judgement | 79 | `audit-run.go` runs it, saves the output, marks it **REVIEW** — a human decides (48 checks, 30 cross-references, 1 by hand) |
 | **3** | A GCP task with no CLI surface (Admin Console, image build, a test that must be performed) | 30 | Human, step by step |
 | **4** | Process, policy or documentation — nothing to do with infrastructure state | 72 | Human, evidence-based |
 
@@ -32,14 +32,30 @@ Checks are tagged **`scope: org`** or **`scope: project`**, and they run as two 
 
 | Pass | Checks | Command |
 |---|---|---|
-| **Organization** | 68 | `go run audit-run.go -scope=org` |
-| **Project** | 90 | `go run audit-run.go -scope=project -project=PROJECT_ID` — **once per project** |
+| **Organization** | 71 | `go run audit-run.go -scope=org` |
+| **Project** | 87 | `go run audit-run.go -scope=project -project=PROJECT_ID` — **once per project** |
 
 Run the organization pass first. It establishes the posture every project inherits, and several of its findings explain project-level results — a missing org policy constraint is why fifty projects each have a default network.
 
 The project pass targets one project per invocation. Within that project it enumerates **every** resource of the relevant kind: every Cloud SQL instance, every node pool, every KMS key, every bucket. A requirement is met only when every resource meets it — one non-compliant instance out of ten fails the check, and the output names which one.
 
-Only three values cannot be discovered, because they depend on your naming rather than on anything queryable: `BACKUP_BUCKET`, `TFSTATE_BUCKET` and `BACKUP_PROJECT`. Supply them with `-config`, or set them to `none` if they do not exist — which is a finding, not a skip.
+**Prerequisites.** Eleven values can't be discovered, because they depend on your naming or your policy rather than on anything queryable. Supply them in the `-config` file (`-init-config` writes a template), or set one to `none` if it does not exist — which is a finding, not a skip.
+
+| Value | What it is | Example | Checks |
+|---|---|---|---|
+| `BACKUP_BUCKET` | The bucket holding backups | `acme-backups` | 6 |
+| `TFSTATE_BUCKET` | The bucket holding Terraform state | `acme-tf-state` | 1 |
+| `BACKUP_PROJECT` | The project holding isolated backup copies | `acme-backup` | 2 |
+| `APPROVED_REGISTRIES` | Approved container registry prefixes | `us-docker.pkg.dev/acme,gke.gcr.io` | 2 |
+| `ALLOWED_LOCATIONS` | Locations data may live in | `us,us-central1,us-west1` | 2 |
+| `LOG_RETENTION_DAYS` | Minimum log bucket retention, days | `400` | 1 |
+| `SQL_BACKUP_RETENTION` | Minimum automated backups per Cloud SQL instance | `30` | 1 |
+| `DORMANCY_DAYS` | Days without authentication before a service account is dormant | `90` | 1 |
+| `BACKUP_IDENTITY` | The one service account allowed to write backups | `backup-writer@acme-backup.iam.gserviceaccount.com` | 2 |
+| `PRODUCTION_PROJECTS` | Regular expressions matching production project IDs | `^acme-prod-,^acme-pci-` | 3 |
+| `PRODUCTION_REGIONS` | Regions production data lives in | `us-west1,us-east1` | 1 |
+
+Lists are comma-separated with no spaces. Each value turns a judgement call into a PASS/FAIL, so these checks are scored automatically.
 
 **Required roles.** Verified by running a representative check from each family against a live organization.
 
@@ -119,44 +135,54 @@ Enable `securitycenter.googleapis.com` as well only where SCC is actually licens
 **Cloud Asset Inventory feed at organization scope** · checklist `1.1#1` · scope: org
 
 ```bash
-gcloud asset feeds list --organization=$ORG_ID
+set -o pipefail
+n=$(gcloud asset feeds list --organization=$ORG_ID --format=json \
+  | jq '(if type == "array" then . else (.feeds // []) end) | length') || exit 1
+if [ "$n" -eq 0 ]; then echo "NO ORGANIZATION ASSET FEED: no continuous inventory exists"; fi
 ```
 
-**Pass:** At least one feed listed. Empty output means no continuous inventory exists.
+**Pass:** Empty output. A line means no organization-level Cloud Asset Inventory feed exists.
 
 #### V2
 
 **Feed exports to a durable destination** · checklist `1.1#2` · scope: org
 
 ```bash
-gcloud asset feeds list --organization=$ORG_ID \
-  --format="table(name,feedOutputConfig.pubsubDestination.topic)"
+gcloud asset feeds list --organization=$ORG_ID --format=json \
+  | jq -r '(if type == "array" then . else (.feeds // []) end)[]
+    | select(.feedOutputConfig.pubsubDestination.topic == null)
+    | "FEED WITHOUT DESTINATION: \(.name)"'
 ```
 
-**Pass:** Every feed shows a destination. A feed with no output config delivers nothing.
+**Pass:** Empty output. Each line is a feed with no Pub/Sub destination, which delivers nothing.
 
 #### V3
 
 **All projects enumerated, including those flat under the org node** · checklist `1.1#3` · scope: org
 
 ```bash
-gcloud projects list --format="value(projectId)" | wc -l
-gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=cloudresourcemanager.googleapis.com/Project \
-  --format="value(name)" | wc -l
+set -o pipefail
+a=$(gcloud projects list --format="value(projectId)" | wc -l | tr -d ' ') || exit 1
+b=$(gcloud asset search-all-resources --scope=organizations/$ORG_ID \
+  --asset-types=cloudresourcemanager.googleapis.com/Project --format="value(name)" | wc -l | tr -d ' ') || exit 1
+if [ "$a" != "$b" ]; then echo "PROJECT COUNT MISMATCH: gcloud projects list=$a, Asset Inventory=$b"; fi
 ```
 
-**Pass:** Counts match. A gap means projects exist outside your inventory scope.
+**Pass:** Empty output. A line means the two counts differ — projects exist outside the inventory scope.
 
 #### V4
 
 **Inventory covers all major compute and data services** · checklist `1.1#4` · scope: org
 
 ```bash
-gcloud asset feeds list --organization=$ORG_ID --format="value(assetTypes)"
+gcloud asset feeds list --organization=$ORG_ID --format=json \
+  | jq -r '[(if type == "array" then . else (.feeds // []) end)[] | .assetTypes[]?] as $have
+    | ["compute.googleapis.com/Instance", "storage.googleapis.com/Bucket", "sqladmin.googleapis.com/Instance",
+       "container.googleapis.com/Cluster", "run.googleapis.com/Service"][]
+    | select(. as $t | $have | index($t) | not) | "NOT IN ANY FEED: \(.)"'
 ```
 
-**Pass:** Asset types include compute Instance, storage Bucket, sqladmin Instance, container Cluster, run Service.
+**Pass:** Empty output. Each line is a major asset type no feed covers.
 
 #### V5
 
@@ -172,7 +198,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 #### V6
 
-**Shared VPC host and service project relationships mapped** · checklist `1.1#6` · scope: project
+**Shared VPC host and service project relationships mapped** · checklist `1.1#6` · scope: org
 
 ```bash
 gcloud compute shared-vpc organizations list-host-projects $ORG_ID
@@ -204,7 +230,7 @@ enabled=$(gcloud billing projects describe "$PROJECT_ID" --format="value(billing
 if [ "$enabled" != "True" ]; then echo "NO BILLING ACCOUNT: $PROJECT_ID"; fi
 ```
 
-**Pass:** First command empty, or every result has a recorded disposition.
+**Pass:** Empty output. Each line is a project that is not ACTIVE or has no billing account — a finding until its disposition is recorded.
 
 #### V8
 
@@ -239,11 +265,13 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **VM Manager OS inventory enabled and agent present** · checklist `2.1#1` · scope: project
 
 ```bash
-gcloud compute instances os-inventory list-instances --format="table(name,zone)"
-gcloud compute instances list --format="value(name)" | wc -l
+set -o pipefail
+all=$(gcloud compute instances list --project="$PROJECT_ID" --format="value(name)" | sort) || exit 1
+inv=$(gcloud compute instances os-inventory list-instances --project="$PROJECT_ID" --format="value(name)" | sort)
+comm -23 <(printf '%s\n' "$all" | grep .) <(printf '%s\n' "$inv" | grep .) | sed 's/^/NO OS INVENTORY: /'
 ```
 
-**Pass:** Instance counts match. A shortfall is instances with no OS Config agent.
+**Pass:** Empty output. Each line is an instance reporting no OS inventory — no OS Config agent, or the API is off.
 
 #### V10
 
@@ -273,7 +301,7 @@ gcloud artifacts repositories list --format="table(name,format,location)"
 gcloud container clusters list --format="table(name,location,currentMasterVersion,currentNodeVersion,releaseChannel.channel)"
 ```
 
-**Pass:** Every cluster listed with its version captured in the inventory.
+**Pass:** Evidence: the GKE cluster and node pool versions, recorded as the inventory. PASS when the command runs.
 
 #### V13
 
@@ -284,7 +312,7 @@ gcloud functions list --format="table(name,runtime,state)"
 gcloud run services list --format="table(SERVICE,REGION)"
 ```
 
-**Pass:** All runtimes captured.
+**Pass:** Evidence: the serverless runtime versions, recorded as the inventory. PASS when the command runs.
 
 #### V14
 
@@ -294,7 +322,7 @@ gcloud run services list --format="table(SERVICE,REGION)"
 gcloud sql instances list --format="table(name,databaseVersion,region)"
 ```
 
-**Pass:** All instances captured.
+**Pass:** Evidence: the Cloud SQL engine versions, recorded as the inventory. PASS when the command runs.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -333,22 +361,22 @@ gcloud container clusters list --format="value(name,currentMasterVersion,release
 **No decommissioned serverless runtimes** · checklist `2.2#3` · scope: project
 
 ```bash
-gcloud functions list --format="value(name,runtime)" \
-  | grep -E "nodejs(8|10|12|14)|python3(7)?|go1(11|13)?|ruby2" || echo "none found"
+gcloud functions list --project="$PROJECT_ID" --format="value(name.basename(),runtime)" \
+  | awk '$2 ~ /^(nodejs(8|10|12|14)|python37|go1(11|13)|ruby2[0-9])$/ {print "DECOMMISSIONED RUNTIME: " $1 " (" $2 ")"}'
 ```
 
-**Pass:** "none found".
+**Pass:** Empty output. Each line is a function on a decommissioned runtime.
 
 #### V18
 
 **No unsupported Cloud SQL database versions** · checklist `2.2#4` · scope: project
 
 ```bash
-gcloud sql instances list --format="value(name,databaseVersion)" \
-  | grep -E "MYSQL_5_6|POSTGRES_9|POSTGRES_10|SQLSERVER_2017" || echo "none found"
+gcloud sql instances list --project="$PROJECT_ID" --format="value(name,databaseVersion)" \
+  | awk '$2 ~ /^(MYSQL_5_6|POSTGRES_9|POSTGRES_10|SQLSERVER_2017)/ {print "UNSUPPORTED VERSION: " $1 " (" $2 ")"}'
 ```
 
-**Pass:** "none found".
+**Pass:** Empty output. Each line is an instance on an unsupported database version.
 
 #### V19
 
@@ -374,35 +402,46 @@ gcloud compute instance-templates list --format=json \
 **Container images sourced only from approved registries** · checklist `2.3#3` · scope: project
 
 ```bash
-gcloud container binauthz policy export --format="value(admissionWhitelistPatterns[].namePattern)"
+approved=APPROVED_REGISTRIES
+gcloud container binauthz policy export --project="$PROJECT_ID" --format=json \
+  | jq -r --arg approved "$approved" '($approved | split(",")) as $ok
+    | .admissionWhitelistPatterns[]?.namePattern
+    | select(. as $p | $ok | map(. as $a | $p | startswith($a)) | any | not)
+    | "UNAPPROVED ALLOWLIST PATTERN: \(.)"'
 ```
 
-**Pass:** Allowlist patterns match your approved registries only.
+**Pass:** Empty output. Requires the APPROVED_REGISTRIES prerequisite. Each line is an allowlist pattern outside the approved registries.
 
 #### V21
 
 **Binary Authorization policy in place** · checklist `2.3#4` · scope: project
 
 ```bash
-gcloud container binauthz policy export \
-  --format="value(defaultAdmissionRule.evaluationMode,defaultAdmissionRule.enforcementMode)"
+gcloud container binauthz policy export --project="$PROJECT_ID" --format=json \
+  | jq -r '.defaultAdmissionRule as $d
+    | select($d.evaluationMode != "REQUIRE_ATTESTATION" or $d.enforcementMode != "ENFORCED_BLOCK_AND_AUDIT_LOG")
+    | "BINAUTHZ NOT ENFORCING: evaluationMode=\($d.evaluationMode) enforcementMode=\($d.enforcementMode)"'
 ```
 
-**Pass:** REQUIRE_ATTESTATION and ENFORCED_BLOCK_AND_AUDIT_LOG. ALWAYS_ALLOW is a fail.
+**Pass:** Empty output. A line means the default rule does not require attestation with enforcement (ALWAYS_ALLOW is a fail).
 
 #### V22
 
 **Workloads already running unattested identified and rolled** · checklist `2.3#5` · scope: project · needs `jq`
 
 ```bash
+approved=APPROVED_REGISTRIES
 gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
   --asset-types=k8s.io/Pod --read-mask='*' --format=json \
-  | jq -r '.[] | .versionedResources[]?.resource as $p
-    | "\($p.metadata.namespace // "?")\t\([$p.spec.containers[]?.image] | join(","))"' \
-  | grep -v "gcr.io/google-containers" || true
+  | jq -r --arg approved "$approved" '($approved | split(",")) as $ok
+    | .[] | .versionedResources[]?.resource as $p
+    | select(($p.metadata.namespace // "") | test("^(kube-system|gke-|gmp-)") | not)
+    | $p.spec.containers[]?.image
+    | select(. as $i | $ok | map(. as $a | $i | startswith($a)) | any | not)
+    | "UNAPPROVED IMAGE: \($p.metadata.namespace // "?")/\($p.metadata.name // "?") \(.)"' | sort -u
 ```
 
-**Pass:** Every image listed matches an approved registry.
+**Pass:** Empty output. Requires the APPROVED_REGISTRIES prerequisite. Each line is a running pod image from outside the approved registries (Google-managed system namespaces excluded).
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -423,10 +462,19 @@ gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
 **Data residency requirements defined and mapped** · checklist `3.1#3` · scope: org
 
 ```bash
-gcloud org-policies describe gcp.resourceLocations --organization=$ORG_ID --effective
+allowed=ALLOWED_LOCATIONS
+gcloud org-policies describe gcp.resourceLocations --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg allowed "$allowed" '($allowed | ascii_downcase | split(",")) as $ok
+    | [.spec.rules[]?] as $r
+    | if ($r | length) == 0 or ($r | map(.allowAll == true) | any)
+      then "NOT RESTRICTED: gcp.resourceLocations allows every location"
+      else ($r[].values.allowedValues[]?
+        | select((ascii_downcase | sub("^in:"; "") | sub("-locations$"; "")) as $v | $ok | index($v) | not)
+        | "ALLOWED BY POLICY BUT NOT IN ALLOWED_LOCATIONS: \(.)")
+      end'
 ```
 
-**Pass:** Constraint present with an allowed-values list matching your residency policy.
+**Pass:** Empty output. Requires the ALLOWED_LOCATIONS prerequisite. A line means the constraint is unset, or allows a location outside ALLOWED_LOCATIONS.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -467,12 +515,16 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Data location recorded per store** · checklist `3.2#4` · scope: org
 
 ```bash
+allowed=ALLOWED_LOCATIONS
 gcloud asset search-all-resources --scope=organizations/$ORG_ID \
   --asset-types=storage.googleapis.com/Bucket,bigquery.googleapis.com/Dataset,sqladmin.googleapis.com/Instance \
-  --format="table(name,location)"
+  --format=json \
+  | jq -r --arg allowed "$allowed" '($allowed | ascii_downcase | split(",")) as $ok
+    | .[] | select((.location // "" | ascii_downcase) as $l | $ok | index($l) | not)
+    | "OUTSIDE ALLOWED_LOCATIONS: \(.name) (\(.location))"'
 ```
 
-**Pass:** Every location is within your approved regions.
+**Pass:** Empty output. Requires the ALLOWED_LOCATIONS prerequisite. Each line is a data store outside the allowed locations.
 
 **Manual — GCP task, no CLI surface:**
 
@@ -501,10 +553,12 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
 **Public access prevention enforced at org level** · checklist `3.3#2` · scope: org
 
 ```bash
-gcloud org-policies describe storage.publicAccessPrevention --organization=$ORG_ID --effective
+c=storage.publicAccessPrevention
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V29
 
@@ -523,7 +577,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
 
 ```bash
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read b; do
-  u=$(gcloud storage buckets describe "gs://$b" --format="value(uniform_bucket_level_access)")
+  u=$(gcloud storage buckets describe "gs://$b" --raw --format="value(iamConfiguration.uniformBucketLevelAccess.enabled)")
   if [ "$u" != "True" ]; then echo "LEGACY ACLs: $PROJECT_ID / $b"; fi
 done
 ```
@@ -549,10 +603,12 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json
 **Uniform bucket-level access enforced** · checklist `3.3#6` · scope: org
 
 ```bash
-gcloud org-policies describe storage.uniformBucketLevelAccess --organization=$ORG_ID --effective
+c=storage.uniformBucketLevelAccess
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V33
 
@@ -621,7 +677,7 @@ gcloud access-context-manager perimeters list --policy=$POLICY_ID \
 
 ```bash
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read b; do
-  l=$(gcloud storage buckets describe "gs://$b" --format="value(lifecycle_config)")
+  l=$(gcloud storage buckets describe "gs://$b" --raw --format="value(lifecycle.rule)")
   if [ -z "$l" ]; then echo "NO LIFECYCLE RULE: $PROJECT_ID / $b"; fi
 done
 ```
@@ -646,21 +702,27 @@ done
 **Cloud SQL backup retention set to the defined period** · checklist `3.4#4` · scope: project
 
 ```bash
-gcloud sql instances list --format="value(name,settings.backupConfiguration.backupRetentionSettings.retainedBackups)"
+min=SQL_BACKUP_RETENTION
+gcloud sql instances list --project="$PROJECT_ID" --format=json \
+  | jq -r --argjson min "$min" '.[] | select(.instanceType != "READ_REPLICA_INSTANCE")
+    | (.settings.backupConfiguration.backupRetentionSettings.retainedBackups // 0 | tonumber) as $n
+    | select($n < $min) | "BACKUP RETENTION BELOW \($min): \(.name) keeps \($n)"'
 ```
 
-**Pass:** Every instance shows a retention count matching policy.
+**Pass:** Empty output. Requires the SQL_BACKUP_RETENTION prerequisite. Each line is an instance keeping fewer backups than required.
 
 #### V40
 
 **Log bucket retention set explicitly** · checklist `3.4#5` · scope: org
 
 ```bash
-gcloud logging buckets list --organization=$ORG_ID --location=global \
-  --format="table(name,retentionDays,locked)"
+min=LOG_RETENTION_DAYS
+gcloud logging buckets list --organization=$ORG_ID --location=global --format=json \
+  | jq -r --argjson min "$min" '.[] | select((.retentionDays // 30) < $min)
+    | "RETENTION BELOW \($min) DAYS: \(.name) (\(.retentionDays // 30))"'
 ```
 
-**Pass:** No bucket left at 30 days unless that is the documented policy.
+**Pass:** Empty output. Requires the LOG_RETENTION_DAYS prerequisite. Each line is a log bucket retained for less than the required period.
 
 #### V41
 
@@ -685,8 +747,8 @@ See V37 and V38 — both must return empty.
 ```bash
 # Every bucket in the project — one non-compliant bucket fails the requirement
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read -r b; do
-  gcloud storage buckets describe "gs://$b" \
-    --format="value[separator='|'](versioning.enabled,soft_delete_policy.retentionDurationSeconds)" \
+  gcloud storage buckets describe "gs://$b" --raw \
+    --format="value[separator='|'](versioning.enabled,softDeletePolicy.retentionDurationSeconds)" \
     | while IFS='|' read -r v sd; do
         echo "$PROJECT_ID / $b  versioning=${v:-off}  soft_delete=${sd:-none}"
       done
@@ -787,10 +849,12 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Default network creation constraint enforced** · checklist `4.2#2` · scope: org
 
 ```bash
-gcloud org-policies describe compute.skipDefaultNetworkCreation --organization=$ORG_ID --effective
+c=compute.skipDefaultNetworkCreation
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V48
 
@@ -838,10 +902,13 @@ See V49.
 **VPC peering and Shared VPC constraints applied** · checklist `4.2#8` · scope: org
 
 ```bash
-gcloud org-policies describe compute.restrictVpcPeering --organization=$ORG_ID --effective 2>/dev/null || echo "NOT SET"
+c=compute.restrictVpcPeering
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" '[.spec.rules[]?] as $r
+    | if ($r | length) == 0 or ($r | map(.allowAll == true) | any) then "NOT SET: \($c) allows peering with any network" else empty end'
 ```
 
-**Pass:** Constraint present, or a documented decision that it is not required.
+**Pass:** Empty output. A line means VPC peering is unrestricted; a decision not to restrict it is recorded as an exception.
 
 #### V53
 
@@ -868,11 +935,17 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **IAP session duration configured** · checklist `4.3#3` · scope: project
 
 ```bash
-gcloud iap settings get --resource-type=iap_web --project="$PROJECT_ID" \
-  --format="value(accessSettings.reauthSettings.maxAge)"
+set -o pipefail
+iap=$(gcloud compute backend-services list --project="$PROJECT_ID" --format=json \
+  | jq '[.[] | select(.iap.enabled == true)] | length') || exit 1
+if [ "$iap" -gt 0 ]; then
+  age=$(gcloud iap settings get --resource-type=iap_web --project="$PROJECT_ID" \
+    --format="value(accessSettings.reauthSettings.maxAge)") || exit 1
+  if [ -z "$age" ]; then echo "IAP IN USE WITHOUT A SESSION MAX AGE: $PROJECT_ID ($iap backend service(s))"; fi
+fi
 ```
 
-**Pass:** A finite max age is set.
+**Pass:** Empty output. A line means IAP fronts a backend service but no session max age is set.
 
 **Manual — GCP task, no CLI surface:**
 
@@ -941,11 +1014,19 @@ gcloud compute firewall-rules list --project="$PROJECT_ID" \
 **Egress rules constrained rather than allow-all** · checklist `4.4#4` · scope: project
 
 ```bash
-gcloud compute firewall-rules list --project="$PROJECT_ID" \
-  --filter="direction=EGRESS" --format="table(name,priority,destinationRanges.list(),allowed[].map().firewall_rule().list())"
+set -o pipefail
+rules=$(gcloud compute firewall-rules list --project="$PROJECT_ID" --format=json) || exit 1
+gcloud compute networks list --project="$PROJECT_ID" --format="value(name)" | while read -r net; do
+  printf '%s' "$rules" | jq -r --arg net "$net" '
+    [.[] | select((.network | split("/") | last) == $net and .direction == "EGRESS" and .disabled != true)] as $eg
+    | ($eg[] | select(.allowed != null and ([.destinationRanges[]?] | any(. == "0.0.0.0/0" or . == "::/0")))
+        | "EGRESS ALLOWED TO THE INTERNET: \($net)/\(.name)"),
+      (if ([$eg[] | select(.denied != null and ([.destinationRanges[]?] | index("0.0.0.0/0")))] | length) == 0
+       then "NO EGRESS DENY RULE: \($net) relies on the implied allow-all egress" else empty end)'
+done
 ```
 
-**Pass:** No unrestricted allow-all egress to 0.0.0.0/0 except where documented.
+**Pass:** Empty output. A line is an explicit internet egress allow, or a network with no egress deny rule (so the implied allow-all applies). Documented exceptions are recorded against the finding.
 
 #### V59
 
@@ -965,11 +1046,13 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Cloud SQL public IP disabled by constraint** · checklist `4.4#6` · scope: org
 
 ```bash
-gcloud org-policies describe sql.restrictPublicIp --organization=$ORG_ID --effective
-gcloud org-policies describe sql.restrictAuthorizedNetworks --organization=$ORG_ID --effective
+for c in sql.restrictPublicIp sql.restrictAuthorizedNetworks; do
+  gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+    | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
+done
 ```
 
-**Pass:** Both enforced true.
+**Pass:** Empty output. A line names a constraint that is not enforced.
 
 #### V61
 
@@ -997,11 +1080,14 @@ See V55 and V56.
 **GKE control plane authorized networks and private clusters** · checklist `4.4#9` · scope: project
 
 ```bash
-gcloud container clusters list \
-  --format="table(name,privateClusterConfig.enablePrivateNodes,masterAuthorizedNetworksConfig.enabled)"
+gcloud container clusters list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | (.privateClusterConfig.enablePrivateNodes // .networkConfig.defaultEnablePrivateNodes // false) as $priv
+    | (.masterAuthorizedNetworksConfig.enabled // .controlPlaneEndpointsConfig.ipEndpointsConfig.authorizedNetworksConfig.enabled // false) as $man
+    | select($priv != true or $man != true)
+    | "CLUSTER NOT PRIVATE OR AUTHORIZED: \(.name) privateNodes=\($priv) authorizedNetworks=\($man)"'
 ```
 
-**Pass:** Both True for every cluster.
+**Pass:** Empty output. Each line is a cluster without private nodes or control-plane authorized networks.
 
 #### V64
 
@@ -1023,10 +1109,12 @@ gcloud compute backend-services list --global --format=json \
 **OS Login enforced org-wide** · checklist `4.6#1` · scope: org
 
 ```bash
-gcloud org-policies describe compute.requireOsLogin --organization=$ORG_ID --effective
+c=compute.requireOsLogin
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V66
 
@@ -1095,10 +1183,12 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **Serial port access disabled** · checklist `4.6#6` · scope: org
 
 ```bash
-gcloud org-policies describe compute.disableSerialPortAccess --organization=$ORG_ID --effective
+c=compute.disableSerialPortAccess
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V71
 
@@ -1126,31 +1216,37 @@ gcloud compute firewall-rules list \
 **Shielded VM enforced** · checklist `4.6#9` · scope: org
 
 ```bash
-gcloud org-policies describe compute.requireShieldedVm --organization=$ORG_ID --effective
+c=compute.requireShieldedVm
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V74
 
 **IP forwarding restricted** · checklist `4.6#10` · scope: org
 
 ```bash
-gcloud org-policies describe compute.vmCanIpForward --organization=$ORG_ID --effective
+c=compute.vmCanIpForward
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.denyAll] | any) then empty else "NOT DENY-ALL: \($c)" end'
 ```
 
-**Pass:** listPolicy denyAll true.
+**Pass:** Empty output. A line means IP forwarding is not denied for all VMs.
 
 #### V75
 
 **GKE hardening settings** · checklist `4.6#11` · scope: project · needs `jq`
 
 ```bash
-gcloud container clusters list --format=json \
-  | jq -r '.[] | "\(.name)\tABAC=\(.legacyAbac.enabled // false)\tWI=\(.workloadIdentityConfig.workloadPool // "OFF")\tSHIELDED=\(.nodeConfig.shieldedInstanceConfig.enableSecureBoot // false)"'
+gcloud container clusters list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.legacyAbac.enabled == true or .workloadIdentityConfig.workloadPool == null
+      or .nodeConfig.shieldedInstanceConfig.enableSecureBoot != true)
+    | "GKE HARDENING GAP: \(.name) ABAC=\(.legacyAbac.enabled // false) WI=\(.workloadIdentityConfig.workloadPool // "OFF") SECURE_BOOT=\(.nodeConfig.shieldedInstanceConfig.enableSecureBoot // false)"'
 ```
 
-**Pass:** ABAC=false, WI set, SHIELDED=true for every cluster.
+**Pass:** Empty output. Each line is a cluster with legacy ABAC on, Workload Identity off, or Secure Boot off.
 
 #### V76
 
@@ -1203,11 +1299,12 @@ gcloud projects get-iam-policy "$PROJECT_ID" --flatten="bindings[].members" \
 **Automatic default grants constraint enforced** · checklist `4.7#3` · scope: org
 
 ```bash
-gcloud org-policies describe iam.automaticIamGrantsForDefaultServiceAccounts \
-  --organization=$ORG_ID --effective
+c=iam.automaticIamGrantsForDefaultServiceAccounts
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V80
 
@@ -1252,7 +1349,7 @@ gcloud container clusters list --project="$PROJECT_ID" --format="value(name,loca
     done
 ```
 
-**Pass:** No node pool shows "default".
+**Pass:** Empty output. Each line is a node pool running as the default service account.
 
 #### V84
 
@@ -1297,7 +1394,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
 wc -l "$out/iam-inventory.txt"
 ```
 
-**Pass:** Inventory produced and retained as evidence.
+**Pass:** Evidence: the organization IAM inventory, written to the pack. PASS when the command runs.
 
 #### V87
 
@@ -1309,7 +1406,7 @@ gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID --format=json
     | "\($r)\t\(.role)\t\(.condition.title)"'
 ```
 
-**Pass:** Every conditional binding is in the inventory.
+**Pass:** Evidence: every conditional IAM binding in the organization. PASS when the command runs.
 
 #### V88
 
@@ -1345,10 +1442,12 @@ See V31.
 **Service account key creation constraint enforced** · checklist `5.2#2` · scope: org
 
 ```bash
-gcloud org-policies describe iam.disableServiceAccountKeyCreation --organization=$ORG_ID --effective
+c=iam.disableServiceAccountKeyCreation
+gcloud org-policies describe "$c" --organization=$ORG_ID --effective --format=json \
+  | jq -r --arg c "$c" 'if ([.spec.rules[]?.enforce] | any) then empty else "NOT ENFORCED: \($c)" end'
 ```
 
-**Pass:** booleanPolicy enforced true. Dry-run only is NOT compliant.
+**Pass:** Empty output. A line means the constraint is not enforced — unset, enforce false, or dry-run only.
 
 #### V91
 
@@ -1402,11 +1501,11 @@ gcloud iam workload-identity-pools list --location=global --project="$PROJECT_ID
 **Remaining static credentials in Secret Manager with rotation** · checklist `5.2#7` · scope: project
 
 ```bash
-gcloud secrets list --project="$PROJECT_ID" \
-  --format="table(name,replication.automatic,rotation.nextRotationTime)"
+gcloud secrets list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.rotation.nextRotationTime == null) | "NO ROTATION SCHEDULE: \(.name | split("/") | last)"'
 ```
 
-**Pass:** Every secret shows a rotation schedule.
+**Pass:** Empty output. Each line is a secret with no rotation schedule.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -1440,13 +1539,23 @@ gcloud logging read \
 **Service account activity assessed** · checklist `5.3#3` · scope: project
 
 ```bash
-gcloud policy-intelligence query-activity \
-  --activity-type=serviceAccountLastAuthentication \
-  --project="$PROJECT_ID" \
-  --format="table(activity.lastAuthenticatedTime,fullResourceName)"
+set -o pipefail
+days=DORMANCY_DAYS
+sas=$(gcloud iam service-accounts list --project="$PROJECT_ID" --filter="disabled=false" --format="value(email)") || exit 1
+act=$(gcloud policy-intelligence query-activity --activity-type=serviceAccountLastAuthentication \
+  --project="$PROJECT_ID" --format=json) || exit 1
+if [ -n "$sas" ]; then
+  printf '%s\n' "$sas" | while read -r sa; do
+    printf '%s' "$act" | jq -r --arg sa "$sa" --argjson days "$days" '(now - $days * 86400) as $cut
+      | ([.[] | select(.activity.serviceAccount.fullResourceName | endswith("/" + $sa)) | .activity.lastAuthenticatedTime] | first) as $t
+      | if $t == null then "DORMANT (no authentication recorded): \($sa)"
+        elif ($t | fromdateiso8601) < $cut then "DORMANT (last authenticated \($t)): \($sa)"
+        else empty end'
+  done
+fi
 ```
 
-**Pass:** No account exceeds the dormancy threshold.
+**Pass:** Empty output. Requires the DORMANCY_DAYS prerequisite. Each line is an enabled service account with no authentication within that many days.
 
 #### V98
 
@@ -1684,7 +1793,7 @@ See V68 and V72.
 
 #### V113
 
-**Phishing-resistant methods for org and folder admins** · checklist `6.5#3` · scope: project · partial — completes with a manual step
+**Phishing-resistant methods for org and folder admins** · checklist `6.5#3` · scope: org · partial — completes with a manual step
 
 ```bash
 gcloud organizations get-iam-policy $ORG_ID --flatten="bindings[].members" \
@@ -1739,11 +1848,12 @@ See V45.
 **Findings routed to an owning team automatically** · checklist `7.2#2` · scope: org
 
 ```bash
-gcloud scc notifications list --organization=$ORG_ID \
-  --format="table(name,pubsubTopic,streamingConfig.filter)"
+set -o pipefail
+n=$(gcloud scc notifications list --organization=$ORG_ID --format=json | jq 'length') || exit 1
+if [ "$n" -eq 0 ]; then echo "NO SCC NOTIFICATION CONFIG: findings are not routed anywhere"; fi
 ```
 
-**Pass:** At least one notification config exists with a live Pub/Sub topic.
+**Pass:** Empty output. A line means no Security Command Center notification config exists.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -1764,11 +1874,17 @@ gcloud scc notifications list --organization=$ORG_ID \
 **Patch deployments configured on a recurring schedule** · checklist `7.3#1` · scope: project
 
 ```bash
-gcloud compute os-config patch-deployments list \
-  --format="table(name,recurringSchedule.frequency,lastExecuteTime)"
+set -o pipefail
+vms=$(gcloud compute instances list --project="$PROJECT_ID" --format="value(name)" | wc -l | tr -d ' ') || exit 1
+if [ "$vms" -gt 0 ]; then
+  n=$(gcloud compute os-config patch-deployments list --project="$PROJECT_ID" --format=json \
+    | jq '[.[] | select(.recurringSchedule != null)] | length') \
+    || { echo "NO RECURRING PATCH DEPLOYMENT: $PROJECT_ID has $vms instance(s) and OS Config is unavailable"; exit 0; }
+  if [ "$n" -eq 0 ]; then echo "NO RECURRING PATCH DEPLOYMENT: $PROJECT_ID has $vms instance(s)"; fi
+fi
 ```
 
-**Pass:** At least one recurring deployment covering all instance groups.
+**Pass:** Empty output. A line means the project has instances but no recurring patch deployment.
 
 #### V117
 
@@ -1783,11 +1899,19 @@ See V9.
 **Patch compliance reporting reviewed** · checklist `7.3#3` · scope: project
 
 ```bash
-gcloud compute os-config patch-jobs list --limit=10 \
-  --format="table(name,state,createTime,instanceDetailsSummary)"
+set -o pipefail
+vms=$(gcloud compute instances list --project="$PROJECT_ID" --format="value(name)" | wc -l | tr -d ' ') || exit 1
+if [ "$vms" -gt 0 ]; then
+  jobs=$(gcloud compute os-config patch-jobs list --project="$PROJECT_ID" --limit=50 --format=json) \
+    || { echo "NO PATCH JOBS: $PROJECT_ID has $vms instance(s) and OS Config is unavailable"; exit 0; }
+  printf '%s' "$jobs" | jq -r --arg p "$PROJECT_ID" '(now - 30 * 86400) as $cut
+    | [.[] | select((.createTime | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) > $cut)] as $recent
+    | if ($recent | length) == 0 then "NO PATCH JOB IN THE LAST 30 DAYS: \($p)"
+      else ($recent[] | select(.state != "SUCCEEDED") | "PATCH JOB NOT SUCCEEDED: \(.name | split("/") | last) \(.state)") end'
+fi
 ```
 
-**Pass:** Recent jobs present and succeeding.
+**Pass:** Empty output. A line means instances exist but no patch job ran in 30 days, or a recent job did not succeed.
 
 #### V119
 
@@ -1814,11 +1938,12 @@ gcloud container clusters list --format=json \
 **Cloud SQL maintenance windows configured** · checklist `7.3#7` · scope: project
 
 ```bash
-gcloud sql instances list \
-  --format="table(name,settings.maintenanceWindow.day,settings.maintenanceWindow.hour)"
+gcloud sql instances list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.instanceType != "READ_REPLICA_INSTANCE" and .settings.maintenanceWindow.day == null)
+    | "NO MAINTENANCE WINDOW: \(.name)"'
 ```
 
-**Pass:** Every instance shows a configured window.
+**Pass:** Empty output. Each line is an instance with no maintenance window configured.
 
 **Manual — GCP task, no CLI surface:**
 
@@ -1833,10 +1958,17 @@ gcloud sql instances list \
 **Artifact Analysis scanning enabled** · checklist `7.4#1` · scope: project
 
 ```bash
-gcloud services list --enabled --filter="containerscanning.googleapis.com" --project="$PROJECT_ID"
+set -o pipefail
+repos=$(gcloud artifacts repositories list --project="$PROJECT_ID" --format=json \
+  | jq '[.[] | select(.format == "DOCKER")] | length') || exit 1
+if [ "$repos" -gt 0 ]; then
+  on=$(gcloud services list --enabled --project="$PROJECT_ID" \
+    --filter="config.name=containerscanning.googleapis.com" --format="value(config.name)") || exit 1
+  if [ -z "$on" ]; then echo "CONTAINER SCANNING OFF: $PROJECT_ID has $repos Docker repository(ies)"; fi
+fi
 ```
 
-**Pass:** API enabled.
+**Pass:** Empty output. A line means the project holds Docker repositories but Artifact Analysis scanning is off.
 
 #### V123
 
@@ -1901,23 +2033,26 @@ gcloud logging sinks list --organization=$ORG_ID --format=json \
 **Admin Activity logs flowing for all projects** · checklist `8.2#1` · scope: org
 
 ```bash
-gcloud logging read 'logName:"cloudaudit.googleapis.com%2Factivity"' \
-  --organization=$ORG_ID --limit=5 --freshness=1d \
-  --format="value(logName,timestamp)"
+set -o pipefail
+n=$(gcloud logging read 'logName:"cloudaudit.googleapis.com%2Factivity"' \
+  --organization=$ORG_ID --limit=5 --freshness=30d --format="value(timestamp)" | wc -l | tr -d ' ') || exit 1
+if [ "$n" -eq 0 ]; then echo "NO ADMIN ACTIVITY ENTRIES IN THE LAST 30 DAYS"; fi
 ```
 
-**Pass:** Recent entries returned.
+**Pass:** Empty output. A line means no Admin Activity audit entries were written in 30 days — organization-level changes are infrequent, so a quiet day is not a gap.
 
 #### V127
 
-**Data Access audit logs enabled** · checklist `8.2#2` · scope: project · needs `jq`
+**Data Access audit logs enabled** · checklist `8.2#2` · scope: org · needs `jq`
 
 ```bash
 gcloud organizations get-iam-policy $ORG_ID --format=json \
-  | jq '.auditConfigs // "NO ORG-LEVEL AUDIT CONFIG"'
+  | jq -r '[.auditConfigs[]? | select(.service == "allServices") | .auditLogConfigs[]?.logType] as $t
+    | ["DATA_READ", "DATA_WRITE"][] | select(. as $x | $t | index($x) | not)
+    | "DATA ACCESS LOG NOT ENABLED FOR allServices: \(.)"'
 ```
 
-**Pass:** auditConfigs present with DATA_READ and DATA_WRITE for allServices. The most common material gap.
+**Pass:** Empty output. Each line is a Data Access log type not enabled for allServices at the organization. The most common material gap.
 
 #### V128
 
@@ -1928,7 +2063,7 @@ gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fdata_access"' \
   --organization=$ORG_ID --limit=1 --order=asc --format="value(timestamp)"
 ```
 
-**Pass:** Earliest timestamp recorded as the start of your investigable window.
+**Pass:** Evidence: the earliest Data Access log timestamp — the start of the investigable window. PASS when the command runs.
 
 #### V129
 
@@ -1946,11 +2081,11 @@ gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fpolicy"' \
 **Aggregated org-level sink with includeChildren** · checklist `8.2#5` · scope: org
 
 ```bash
-gcloud logging sinks list --organization=$ORG_ID \
-  --format="table(name,destination,includeChildren,filter)"
+gcloud logging sinks list --organization=$ORG_ID --format=json \
+  | jq -r 'if ([.[] | select(.includeChildren == true)] | length) == 0 then "NO AGGREGATED ORG SINK: no sink has includeChildren=true" else empty end'
 ```
 
-**Pass:** At least one sink with includeChildren=True.
+**Pass:** Empty output. A line means no organization sink aggregates child-project logs.
 
 #### V131
 
@@ -1993,30 +2128,30 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 **DNS, NAT and firewall logging enabled** · checklist `8.2#8` · scope: project
 
 ```bash
-echo "== DNS policies (name, enableLogging)"
-gcloud dns policies list --project="$PROJECT_ID" --format="value(name,enableLogging)"
-echo "== Firewall rules (name, logConfig.enable)"
-gcloud compute firewall-rules list --project="$PROJECT_ID" --format="value(name,logConfig.enable)"
-echo "== Cloud NAT (name, logConfig.enable)"
-gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)" \
+gcloud dns policies list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.enableLogging != true) | "DNS POLICY LOGGING OFF: \(.name)"'
+gcloud compute firewall-rules list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.logConfig.enable != true) | "FIREWALL LOGGING OFF: \(.name)"'
+gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region.basename())" \
 | while read -r r reg; do
-    gcloud compute routers nats list --router="$r" --region="$reg" --project="$PROJECT_ID" \
-      --format="value(name,logConfig.enable)"
+    gcloud compute routers nats list --router="$r" --region="$reg" --project="$PROJECT_ID" --format=json \
+      | jq -r --arg r "$r" '.[] | select(.logConfig.enable != true) | "NAT LOGGING OFF: \($r)/\(.name)"'
   done
 ```
 
-**Pass:** Logging enabled on all.
+**Pass:** Empty output. Each line is a DNS policy, firewall rule or Cloud NAT with logging off.
 
 #### V134
 
 **GKE and Cloud SQL logs captured** · checklist `8.2#9` · scope: project
 
 ```bash
-gcloud container clusters list \
-  --format="table(name,loggingService,monitoringService)"
+gcloud container clusters list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.loggingService != "logging.googleapis.com/kubernetes")
+    | "GKE LOGGING NOT CLOUD LOGGING: \(.name) (\(.loggingService // "none"))"'
 ```
 
-**Pass:** loggingService set to logging.googleapis.com/kubernetes.
+**Pass:** Empty output. Each line is a cluster not sending logs to Cloud Logging.
 
 #### V135
 
@@ -2057,26 +2192,57 @@ See V40.
 **Logs in a dedicated logging project** · checklist `8.3#3` · scope: org
 
 ```bash
-gcloud logging sinks list --organization=$ORG_ID --format="value(destination)"
+set -o pipefail
+prod=PRODUCTION_PROJECTS
+prod_re=${prod//,/|}
+dests=$(gcloud logging sinks list --organization=$ORG_ID --format=json \
+  | jq -r '.[] | select(.includeChildren == true) | .destination') || exit 1
+found=0
+while read -r d; do
+  case "$d" in
+    storage.googleapis.com/*)
+      num=$(gcloud storage buckets describe "gs://${d#storage.googleapis.com/}" --raw --format="value(projectNumber)") || continue
+      proj=$(gcloud projects list --filter="projectNumber=$num" --format="value(projectId)") || continue ;;
+    */projects/*) proj=$(printf '%s' "$d" | sed -E 's|.*projects/([^/]+).*|\1|') ;;
+    *) continue ;;
+  esac
+  found=1
+  if printf '%s' "$proj" | grep -Eq -- "$prod_re"; then echo "LOGS ROUTED TO A PRODUCTION PROJECT: $proj ($d)"; fi
+done <<< "$dests"
+if [ "$found" -eq 0 ]; then echo "NO AGGREGATED SINK TO A LOGGING PROJECT"; fi
 ```
 
-**Pass:** Destination project is distinct from every workload project.
+**Pass:** Empty output. Requires the PRODUCTION_PROJECTS prerequisite. A line means no aggregated sink routes to a project, or one routes to a production project.
 
 #### V139
 
 **Bucket Lock applied to the log destination** · checklist `8.3#4` · scope: org
 
 ```bash
-gcloud logging sinks list --organization=$ORG_ID --format="value(destination)" \
-| grep '^storage.googleapis.com/' | sed 's|^storage.googleapis.com/||' | sort -u \
-| while read -r b; do
-    locked=$(gcloud storage buckets describe "gs://$b" \
-      --format="value(retention_policy.isLocked)" 2>/dev/null)
-    if [ "$locked" != "True" ]; then echo "NO BUCKET LOCK: gs://$b"; fi
-  done
+set -o pipefail
+dests=$(gcloud logging sinks list --organization=$ORG_ID --format="value(destination)" | sort -u) || exit 1
+while read -r d; do
+  case "$d" in
+    storage.googleapis.com/*)
+      b="${d#storage.googleapis.com/}"
+      locked=$(gcloud storage buckets describe "gs://$b" --raw --format="value(retentionPolicy.isLocked)")
+      if [ "$locked" != "True" ]; then echo "NO BUCKET LOCK: gs://$b"; fi ;;
+    logging.googleapis.com/*)
+      name="${d#logging.googleapis.com/}"
+      parent=$(printf '%s' "$name" | cut -d/ -f1-2); loc=$(printf '%s' "$name" | cut -d/ -f4); id=$(printf '%s' "$name" | cut -d/ -f6)
+      case "$parent" in
+        organizations/*) flag="--organization=${parent#organizations/}" ;;
+        folders/*)       flag="--folder=${parent#folders/}" ;;
+        projects/*)      flag="--project=${parent#projects/}" ;;
+        *) continue ;;
+      esac
+      locked=$(gcloud logging buckets describe "$id" --location="$loc" "$flag" --format="value(locked)")
+      if [ "$locked" != "True" ]; then echo "LOG BUCKET NOT LOCKED: $name"; fi ;;
+  esac
+done <<< "$dests"
 ```
 
-**Pass:** isLocked=True.
+**Pass:** Empty output. Each line is a sink destination — Cloud Storage bucket or log bucket — without a lock.
 
 #### V140
 
@@ -2120,24 +2286,37 @@ gcloud alpha monitoring policies list --project="$PROJECT_ID" \
 **Cloud DNS response policies applied** · checklist `9.2#1` · scope: project
 
 ```bash
-gcloud dns response-policies list --format="table(responsePolicyName,networks)"
+set -o pipefail
+nets=$(gcloud compute networks list --project="$PROJECT_ID" --format="value(name)" | wc -l | tr -d ' ') || exit 1
+if [ "$nets" -gt 0 ]; then
+  n=$(gcloud dns response-policies list --project="$PROJECT_ID" --format=json \
+    | jq '[.[] | select((.networks // []) | length > 0)] | length') \
+    || { echo "NO DNS RESPONSE POLICY: $PROJECT_ID has $nets VPC network(s) and Cloud DNS is unavailable"; exit 0; }
+  if [ "$n" -eq 0 ]; then echo "NO DNS RESPONSE POLICY BOUND TO A NETWORK: $PROJECT_ID has $nets VPC network(s)"; fi
+fi
 ```
 
-**Pass:** At least one policy bound to your VPC networks.
+**Pass:** Empty output. A line means the project has VPC networks but no response policy bound to them.
 
 #### V143
 
 **Egress routed through Cloud NAT or a proxy** · checklist `9.2#2` · scope: project
 
 ```bash
-gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region)" \
-| while read -r r reg; do
-    gcloud compute routers nats list --router="$r" --region="$reg" --project="$PROJECT_ID" \
-      --format="value(name,natIpAllocateOption)"
-  done
+set -o pipefail
+vms=$(gcloud compute instances list --project="$PROJECT_ID" --format="value(name)" | wc -l | tr -d ' ') || exit 1
+if [ "$vms" -gt 0 ]; then
+  nats=0
+  while read -r r reg; do
+    [ -n "$r" ] || continue
+    c=$(gcloud compute routers nats list --router="$r" --region="$reg" --project="$PROJECT_ID" --format="value(name)" | wc -l | tr -d ' ')
+    nats=$((nats + c))
+  done <<< "$(gcloud compute routers list --project="$PROJECT_ID" --format="value(name,region.basename())")"
+  if [ "$nats" -eq 0 ]; then echo "NO CLOUD NAT: $PROJECT_ID has $vms instance(s)"; fi
+fi
 ```
 
-**Pass:** NAT configured; cross-check V66 for instances bypassing it with external IPs.
+**Pass:** Empty output. A line means instances exist with no Cloud NAT for egress. Instances with external IPs are scored separately by V68.
 
 #### V144
 
@@ -2152,10 +2331,17 @@ See V58.
 **Cloud DNS logging enabled** · checklist `9.2#4` · scope: project
 
 ```bash
-gcloud dns policies list --format="table(name,enableLogging)"
+set -o pipefail
+nets=$(gcloud compute networks list --project="$PROJECT_ID" --format="value(name)" | wc -l | tr -d ' ') || exit 1
+if [ "$nets" -gt 0 ]; then
+  n=$(gcloud dns policies list --project="$PROJECT_ID" --format=json \
+    | jq '[.[] | select(.enableLogging == true and ((.networks // []) | length > 0))] | length') \
+    || { echo "DNS LOGGING OFF: $PROJECT_ID has $nets VPC network(s) and Cloud DNS is unavailable"; exit 0; }
+  if [ "$n" -eq 0 ]; then echo "DNS LOGGING OFF: no logging DNS policy on $PROJECT_ID's $nets VPC network(s)"; fi
+fi
 ```
 
-**Pass:** enableLogging=True on policies attached to your networks.
+**Pass:** Empty output. A line means the project has VPC networks with no DNS policy that logs queries.
 
 #### V146
 
@@ -2265,10 +2451,11 @@ gcloud compute ssh INSTANCE --tunnel-through-iap --project="$PROJECT_ID" \
 **Terraform state backend versioning in scope** · checklist `11.1#4` · scope: project
 
 ```bash
-gcloud storage buckets describe gs://TFSTATE_BUCKET --format="value(versioning.enabled)"
+v=$(gcloud storage buckets describe gs://TFSTATE_BUCKET --raw --format="value(versioning.enabled)") || exit 1
+if [ "$v" != "True" ]; then echo "TERRAFORM STATE VERSIONING OFF: gs://TFSTATE_BUCKET"; fi
 ```
 
-**Pass:** True. State loss is a recovery event.
+**Pass:** Empty output. A line means the Terraform state bucket is not versioned — state loss is a recovery event.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -2289,11 +2476,14 @@ gcloud storage buckets describe gs://TFSTATE_BUCKET --format="value(versioning.e
 **Cloud SQL automated backups with PITR** · checklist `11.2#1` · scope: project
 
 ```bash
-gcloud sql instances list \
-  --format="table(name,settings.backupConfiguration.enabled,settings.backupConfiguration.pointInTimeRecoveryEnabled)"
+gcloud sql instances list --project="$PROJECT_ID" --format=json \
+  | jq -r '.[] | select(.instanceType != "READ_REPLICA_INSTANCE")
+    | .settings.backupConfiguration as $b
+    | select($b.enabled != true or (($b.pointInTimeRecoveryEnabled == true) or ($b.binaryLogEnabled == true)) | not)
+    | "BACKUP OR PITR OFF: \(.name) backups=\($b.enabled // false) pitr=\(($b.pointInTimeRecoveryEnabled // $b.binaryLogEnabled) // false)"'
 ```
 
-**Pass:** Both True for every instance.
+**Pass:** Empty output. Each line is an instance without automated backups or point-in-time recovery.
 
 #### V154
 
@@ -2313,7 +2503,7 @@ gcloud asset search-all-resources --scope=organizations/$ORG_ID \
 
 ```bash
 gcloud storage buckets list --project="$PROJECT_ID" --format="value(name)" | while read -r b; do
-  v=$(gcloud storage buckets describe "gs://$b" --format="value(versioning.enabled)")
+  v=$(gcloud storage buckets describe "gs://$b" --raw --format="value(versioning.enabled)")
   if [ "$v" != "True" ]; then echo "NO VERSIONING: $PROJECT_ID / $b"; fi
 done
 ```
@@ -2339,13 +2529,23 @@ gcloud container clusters list --project="$PROJECT_ID" --format="value(location)
 **Other data services backed up** · checklist `11.2#5` · scope: project
 
 ```bash
-gcloud firestore backups list --project="$PROJECT_ID" --format="value(name)"
-gcloud spanner instances list --project="$PROJECT_ID" --format="value(name)" | while read -r si; do
-  gcloud spanner backups list --instance="$si" --project="$PROJECT_ID" --format="value(name)"
-done
+if dbs=$(gcloud firestore databases list --project="$PROJECT_ID" --format="value(name.basename())"); then
+  for db in $dbs; do
+    s=$(gcloud firestore backups schedules list --database="$db" --project="$PROJECT_ID" --format="value(name)")
+    if [ -z "$s" ]; then echo "FIRESTORE DATABASE WITHOUT BACKUP SCHEDULE: $db"; fi
+  done
+fi
+if insts=$(gcloud spanner instances list --project="$PROJECT_ID" --format="value(name.basename())"); then
+  for i in $insts; do
+    for d in $(gcloud spanner databases list --instance="$i" --project="$PROJECT_ID" --format="value(name.basename())"); do
+      b=$(gcloud spanner backups list --instance="$i" --project="$PROJECT_ID" --filter="database:$d" --format="value(name)")
+      if [ -z "$b" ]; then echo "SPANNER DATABASE WITHOUT BACKUP: $i/$d"; fi
+    done
+  done
+fi
 ```
 
-**Pass:** Backups present for every service in use.
+**Pass:** Empty output. Each line is a Firestore database with no backup schedule or a Spanner database with no backup.
 
 #### V158
 
@@ -2371,11 +2571,11 @@ gcloud alpha monitoring policies list --project="$PROJECT_ID" \
 **Backup data encrypted with CMEK where required** · checklist `11.3#1` · scope: project
 
 ```bash
-gcloud storage buckets describe gs://BACKUP_BUCKET \
-  --format="value(default_kms_key)"
+k=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(encryption.defaultKmsKeyName)") || exit 1
+if [ -z "$k" ]; then echo "BACKUP BUCKET WITHOUT CMEK: gs://BACKUP_BUCKET"; fi
 ```
 
-**Pass:** A KMS key is set where key control is required.
+**Pass:** Empty output. A line means the backup bucket has no customer-managed encryption key.
 
 #### V160
 
@@ -2396,33 +2596,42 @@ gcloud asset search-all-iam-policies --scope=projects/$PROJECT_ID \
 **Backup storage IAM restricted to a dedicated role** · checklist `11.3#3` · scope: project · needs `jq`
 
 ```bash
+id=BACKUP_IDENTITY
 gcloud storage buckets get-iam-policy gs://BACKUP_BUCKET --format=json \
-  | jq -r '.bindings[]? | "\(.role)\t\(.members[])"'
+  | jq -r --arg id "$id" '.bindings[]?
+    | select(.role | test("objectCreator|objectAdmin|objectUser|storage.admin|legacyBucketWriter|legacyBucketOwner|roles/owner|roles/editor"))
+    | .role as $r | .members[] | select(sub("^(serviceAccount|user|group):"; "") != $id)
+    | "WRITE ACCESS BESIDES THE BACKUP IDENTITY: \(.) (\($r))"'
 ```
 
-**Pass:** Only the dedicated backup identity has write access.
+**Pass:** Empty output. Requires the BACKUP_IDENTITY prerequisite. Each line is another principal with write access to the backup bucket.
 
 #### V162
 
 **No production SA holds delete on backups** · checklist `11.3#4` · scope: project · needs `jq`
 
 ```bash
+id=BACKUP_IDENTITY
 gcloud storage buckets get-iam-policy gs://BACKUP_BUCKET --format=json \
-  | jq -r '.bindings[]? | select(.role | test("admin|objectAdmin|owner")) | "\(.role)\t\(.members[])"'
+  | jq -r --arg id "$id" '.bindings[]?
+    | select(.role | test("objectAdmin|objectUser|storage.admin|legacyBucketOwner|roles/owner|roles/editor"))
+    | .role as $r | .members[]
+    | if sub("^(serviceAccount|user|group):"; "") == $id then "BACKUP IDENTITY CAN DELETE BACKUPS: \(.) (\($r)) — objectCreator is the target"
+      else "DELETE ACCESS TO BACKUPS: \(.) (\($r))" end'
 ```
 
-**Pass:** No production identity appears. objectCreator without delete is the target state.
+**Pass:** Empty output. Requires the BACKUP_IDENTITY prerequisite. Each line is a principal able to delete backups, including the backup identity itself.
 
 #### V163
 
 **Bucket Lock applied to backup buckets** · checklist `11.3#5` · scope: project
 
 ```bash
-gcloud storage buckets describe gs://BACKUP_BUCKET \
-  --format="value(retention_policy.isLocked,retention_policy.retentionPeriod)"
+l=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(retentionPolicy.isLocked)") || exit 1
+if [ "$l" != "True" ]; then echo "NO BUCKET LOCK ON BACKUPS: gs://BACKUP_BUCKET"; fi
 ```
 
-**Pass:** isLocked=True.
+**Pass:** Empty output. A line means the backup bucket has no locked retention policy.
 
 #### V164
 
@@ -2443,21 +2652,33 @@ gcloud logging metrics list --project="$PROJECT_ID" --filter="name~backup" --for
 **Backup copy in a separate project** · checklist `11.4#1` · scope: project
 
 ```bash
-gcloud storage buckets describe gs://BACKUP_BUCKET --format="value(project_number)"
+prod=PRODUCTION_PROJECTS
+num=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(projectNumber)") || exit 1
+proj=$(gcloud projects list --filter="projectNumber=$num" --format="value(projectId)") || exit 1
+if printf '%s' "$proj" | grep -Eq -- "${prod//,/|}"; then echo "BACKUP BUCKET IN A PRODUCTION PROJECT: gs://BACKUP_BUCKET is in $proj"; fi
 ```
 
-**Pass:** Project differs from every production workload project.
+**Pass:** Empty output. Requires the PRODUCTION_PROJECTS prerequisite. A line means the backup bucket lives in a production project.
 
 #### V166
 
 **Backup project under a separate folder** · checklist `11.4#2` · scope: project
 
 ```bash
+set -o pipefail
+prod=PRODUCTION_PROJECTS
 backup_project=BACKUP_PROJECT
-gcloud projects describe "$backup_project" --format="value(parent.type,parent.id)"
+bparent=$(gcloud projects describe "$backup_project" --format="value(parent.type,parent.id)" | tr '\t' ' ') || exit 1
+gcloud projects list --format="value(projectId,parent.type,parent.id)" \
+| while IFS=$'\t' read -r p type pid; do
+    [ "$p" = "$backup_project" ] && continue
+    if printf '%s' "$p" | grep -Eq -- "${prod//,/|}" && [ "$type $pid" = "$bparent" ]; then
+      echo "BACKUP PROJECT SHARES A PARENT WITH PRODUCTION: $backup_project and $p under $bparent"
+    fi
+  done
 ```
 
-**Pass:** Parent folder differs from production folders.
+**Pass:** Empty output. Requires the PRODUCTION_PROJECTS prerequisite. A line means the backup project sits under the same folder as a production project.
 
 #### V167
 
@@ -2476,10 +2697,16 @@ gcloud projects get-iam-policy "$backup_project" --format=json \
 **Copy held in a different region or multi-region** · checklist `11.4#4` · scope: project
 
 ```bash
-gcloud storage buckets describe gs://BACKUP_BUCKET --format="value(location,location_type)"
+regions=PRODUCTION_REGIONS
+loc=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(location)") || exit 1
+for r in ${regions//,/ }; do
+  if [ "$(printf '%s' "$r" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$loc" | tr '[:upper:]' '[:lower:]')" ]; then
+    echo "BACKUP COPY IN A PRODUCTION REGION: gs://BACKUP_BUCKET is in $loc"
+  fi
+done
 ```
 
-**Pass:** Location differs from the production data region.
+**Pass:** Empty output. Requires the PRODUCTION_REGIONS prerequisite. A line means the backup bucket is in a production region.
 
 **Manual — GCP task, no CLI surface:**
 
@@ -2506,33 +2733,44 @@ See V16.
 **Classic VPN migrated to HA VPN** · checklist `12.1#2` · scope: project
 
 ```bash
-gcloud compute vpn-gateways list --format="table(name,region)"
-gcloud compute target-vpn-gateways list --format="table(name,region)"
+gcloud compute target-vpn-gateways list --project="$PROJECT_ID" --format="value(name,region.basename())" \
+  | sed 's/^/CLASSIC VPN GATEWAY: /'
 ```
 
-**Pass:** Second command empty — target-vpn-gateways are Classic VPN.
+**Pass:** Empty output. Each line is a Classic VPN gateway still to be migrated to HA VPN.
 
 #### V171
 
 **Load balancer SSL policies at a modern TLS minimum** · checklist `12.1#3` · scope: project
 
 ```bash
-gcloud compute ssl-policies list --format="table(name,profile,minTlsVersion)"
-gcloud compute target-https-proxies list --format="table(name,sslPolicy)"
+set -o pipefail
+pols=$(gcloud compute ssl-policies list --project="$PROJECT_ID" --format=json) || exit 1
+gcloud compute target-https-proxies list --project="$PROJECT_ID" --format=json \
+  | jq -r --argjson pols "$pols" '($pols | map({key: .selfLink, value: (.minTlsVersion // "TLS_1_0")}) | from_entries) as $m
+    | .[] | if .sslPolicy == null then "HTTPS PROXY WITHOUT SSL POLICY: \(.name)"
+      elif ($m[.sslPolicy] // "TLS_1_0") == "TLS_1_0" or ($m[.sslPolicy] // "") == "TLS_1_1"
+      then "HTTPS PROXY BELOW TLS 1.2: \(.name) (\($m[.sslPolicy]))" else empty end'
 ```
 
-**Pass:** Every proxy references a policy with minTlsVersion TLS_1_2 or higher. A proxy with no policy uses permissive defaults.
+**Pass:** Empty output. Each line is an HTTPS proxy with no SSL policy (permissive defaults) or a minimum below TLS 1.2.
 
 #### V172
 
 **Legacy load balancers migrated** · checklist `12.1#4` · scope: project
 
 ```bash
-gcloud compute target-http-proxies list --format="table(name,urlMap)"
-gcloud compute target-pools list --format="table(name,region)"
+set -o pipefail
+gcloud compute target-pools list --project="$PROJECT_ID" --format="value(name,region.basename())" \
+  | sed 's/^/LEGACY TARGET POOL: /'
+maps=$(gcloud compute url-maps list --project="$PROJECT_ID" --format=json) || exit 1
+gcloud compute target-http-proxies list --project="$PROJECT_ID" --format=json \
+  | jq -r --argjson maps "$maps" '($maps | map({key: .selfLink,
+        value: (.defaultUrlRedirect.httpsRedirect == true and ((.pathMatchers // []) | length) == 0)}) | from_entries) as $redir
+    | .[] | select($redir[.urlMap] != true) | "HTTP PROXY NOT REDIRECTING TO HTTPS: \(.name)"'
 ```
 
-**Pass:** target-pools empty; HTTP proxies only where redirect-to-HTTPS is intended.
+**Pass:** Empty output. Each line is a legacy target pool, or an HTTP proxy that serves traffic rather than redirecting to HTTPS.
 
 #### V173
 
@@ -2681,11 +2919,12 @@ gcloud logging metrics list --project="$PROJECT_ID" --filter="name~breakglass OR
 **Essential Contacts set for the Security category** · checklist `17.2#1` · scope: org
 
 ```bash
-gcloud essential-contacts list --organization=$ORG_ID \
-  --format="table(email,notificationCategorySubscriptions.list())"
+gcloud essential-contacts list --organization=$ORG_ID --format=json \
+  | jq -r 'if ([.[] | .notificationCategorySubscriptions[]? | select(. == "SECURITY" or . == "ALL")] | length) == 0
+    then "NO ESSENTIAL CONTACT FOR SECURITY: Google security notices go nowhere useful" else empty end'
 ```
 
-**Pass:** At least one contact subscribed to SECURITY. Empty output means Google’s security notices go nowhere useful.
+**Pass:** Empty output. A line means no organization contact is subscribed to SECURITY.
 
 #### V182
 

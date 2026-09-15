@@ -1096,3 +1096,94 @@ with `--skip V96 --parallel 4` gave 1 audited, 1 excluded (recorded with reason)
 
 **Still open (awaiting decision)** — organization checks that query every project at once through
 Cloud Asset Inventory (32 of 68) still include `sys-` projects in their results.
+
+---
+
+## Automation pass — 2026-09-15
+
+68 REVIEW checks rewritten to score themselves (see [review-triage.md](../design/review-triage.md)). Found while
+converting and testing them:
+
+## BUG-041 — `gcloud storage buckets describe` field names never match: false FAIL on versioned or locked buckets
+
+| | |
+|---|---|
+| Found | 2026-09-15, V165 returned an empty project number; traced to every bucket `describe` |
+| Component | `docs/cis-ig1-cli-validation.md` — V37, V42, V139, V155 (existing); V152, V159, V163, V165, V168 (new) |
+| Severity | wrong result — every bucket reported "NO VERSIONING" / "NO BUCKET LOCK" regardless of its settings |
+
+**Error**
+
+```
+$ gcloud storage buckets describe gs://iq9-iac-ops-tf-state-bucket --format="value(versioning.enabled)"
+                                   # empty — on a bucket with versioning ON
+$ gcloud storage buckets describe gs://iq9-iac-ops-tf-state-bucket --format=json | jq -c keys
+[..., "versioning_enabled"]        # its own snake_case names, and unset keys are omitted
+$ gcloud storage buckets describe gs://iq9-iac-ops-tf-state-bucket --raw --format="value(versioning.enabled)"
+True
+```
+
+**Cause** — Without `--raw`, `gcloud storage` prints its own field names (`versioning_enabled`,
+`default_kms_key`, …) and omits unset keys. The checks used Cloud Storage JSON API names (`versioning.enabled`,
+`retention_policy.isLocked`), so the value was always empty. V155 listed every bucket in every project as
+unversioned since day one.
+
+**Fix** — Every bucket `describe` uses `--raw` with JSON API fields: `versioning.enabled`,
+`retentionPolicy.isLocked`, `encryption.defaultKmsKeyName`, `lifecycle.rule`,
+`iamConfiguration.uniformBucketLevelAccess.enabled`, `projectNumber`, `softDeletePolicy.retentionDurationSeconds`.
+Verified on real buckets: versioning `True` on `iq9-iac-ops-tf-state-bucket` (V152 PASS), UBLA `True`,
+`projectNumber`, and `lifecycle.rule` on a new fixture bucket `cis-test-lifecycle-retention-iq9-yamato` (V37 no longer
+flags it). Unlocked retention omits `isLocked`, correctly read as unlocked. *Not verifiable in this org:* a locked
+retention policy (locking is irreversible) and a CMEK default key (none exists).
+
+## BUG-042 — V17 flagged every modern Python runtime as decommissioned
+
+| | |
+|---|---|
+| Found | 2026-09-15, rewriting V17 |
+| Component | `docs/cis-ig1-cli-validation.md` — V17 |
+| Severity | wrong result — false finding for `python310`, `python311`, `python312`… |
+
+**Cause** — `grep -E "python3(7)?"` matches any runtime containing `python3`; the `(7)?` is optional.
+
+**Fix** — The runtime field is matched exactly: `^(nodejs(8|10|12|14)|python37|go1(11|13)|ruby2[0-9])$`.
+
+## BUG-043 — Auditing the host project reports its disabled product APIs as setup gaps
+
+| | |
+|---|---|
+| Found | 2026-09-15, project pass of `simplifymycloud-dev` (which also hosts the audit SA) |
+| Component | `audit-run.go` — `execute()` |
+| Severity | wrong result — ERROR instead of N/A |
+
+**Error**
+
+```
+V20 ERROR  API DISABLED IN AUDIT HOST PROJECT: binaryauthorization.googleapis.com on simplifymycloud-dev — enable it there
+```
+
+**Cause** — Binary Authorization is gated by the audited project. When that project is also the host, the
+disabled-API project matches the host and was classified as a setup gap.
+
+**Fix** — In a project pass of the host project itself, a disabled API is N/A. Verified: V20/V21 N/A with the reason.
+
+## BUG-044 — V126 read a 24-hour window: a quiet day looked like logs not flowing
+
+| | |
+|---|---|
+| Found | 2026-09-15 |
+| Component | `docs/cis-ig1-cli-validation.md` — V126 |
+| Severity | wrong result — false FAIL |
+
+**Cause** — Organization-level Admin Activity entries appear only when org-level settings change; none in 24 hours is
+normal. **Fix** — 30-day window. Verified: PASS (last entry the previous day).
+
+## BUG-045 — Organization queries in the project pass (V6, V113, V127)
+
+| | |
+|---|---|
+| Found | 2026-09-15, REVIEW triage |
+| Component | `docs/cis-ig1-cli-validation.md` |
+| Severity | wasted work — identical output once per project (105× on a large org), duplicated findings |
+
+**Fix** — `scope: org` (same class as BUG-023). Passes are now 71 org / 87 project checks.

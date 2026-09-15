@@ -74,7 +74,11 @@ type check struct {
 	// emptyPass is true when the pass criteria says empty output means
 	// compliant. Those checks can be auto-verdicted; the rest cannot, and
 	// are surfaced as REVIEW rather than guessed at.
-	emptyPass  bool
+	emptyPass bool
+	// evidence is true when the pass criteria opens "Evidence": the command's
+	// output is the record the requirement asks for, so it passes once the
+	// command runs cleanly, and the output is kept in the pack.
+	evidence   bool
 	rawCommand string   // pre-substitution, so answers can be re-applied
 	missing    []string // unresolved placeholders
 	absent     []string // placeholders the operator declared non-existent
@@ -366,6 +370,8 @@ func main() {
 				state = "xref"
 			case len(c.missing) > 0:
 				state = "needs " + strings.Join(c.missing, ",")
+			case c.evidence:
+				state = "evidence"
 			case !c.emptyPass:
 				state = "review"
 			}
@@ -498,6 +504,7 @@ func parseDoc(path string, subs map[string]string) ([]check, error) {
 		// answer, which is the failure mode that matters in an audit.
 		lc := strings.ToLower(c.criteria)
 		c.emptyPass = strings.HasPrefix(lc, "empty") && !strings.Contains(lc, "is a total fail")
+		c.evidence = strings.HasPrefix(lc, "evidence")
 
 		if c.byHand != "" {
 			// Run by hand; nothing to parse or substitute.
@@ -795,7 +802,10 @@ func execute(c check, timeout time.Duration) result {
 	if strings.Contains(low, "service_disabled") || strings.Contains(low, "has not been used in project") ||
 		strings.Contains(low, "not enabled") {
 		api, proj, ok := disabledAPI(r.errText)
-		if ok && proj != "" && (proj == hostProjectNumber || proj == hostProjectID) {
+		// When the audited project is also the host project, the API is gated by
+		// the project being audited: treat it as an absent product, not a gap.
+		auditingHost := auditScope == "project" && (os.Getenv("PROJECT_ID") == hostProjectID)
+		if ok && proj != "" && !auditingHost && (proj == hostProjectNumber || proj == hostProjectID) {
 			// Disabled in the project that carries the audit's quota: that is
 			// a setup gap in the audit, not an absent product in the estate.
 			r.v = vError
@@ -835,6 +845,8 @@ func execute(c check, timeout time.Duration) result {
 	// pipeline reported an error.
 	case c.emptyPass && r.output == "" && reToolError.MatchString(r.errText):
 		r.v = vError
+	case c.evidence:
+		r.v = vPass
 	case c.emptyPass:
 		if r.output == "" {
 			r.v = vPass
@@ -866,6 +878,9 @@ func why(r result) string {
 
 	switch r.v {
 	case vPass:
+		if r.evidence {
+			return "the command ran cleanly and its output is the evidence this requirement asks for; it is kept below."
+		}
 		return "the command ran cleanly and returned no output, which is the pass criterion."
 	case vFail:
 		switch {
@@ -1381,6 +1396,17 @@ var discoverHint = map[string]string{
 	"KEY":                "KMS key — gcloud kms keys list",
 	"LOCATION":           "KMS key location",
 	"BUCKET":             "any bucket to sample for configuration",
+
+	// Audit prerequisites: values that turn a judgement call into a PASS/FAIL.
+	// Comma-separated lists, no spaces.
+	"APPROVED_REGISTRIES":  "approved container registry prefixes, comma-separated — e.g. us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io",
+	"ALLOWED_LOCATIONS":    "locations data may live in, comma-separated — e.g. us,us-central1,us-west1",
+	"LOG_RETENTION_DAYS":   "minimum log bucket retention in days — e.g. 400",
+	"SQL_BACKUP_RETENTION": "minimum automated backups each Cloud SQL instance keeps — e.g. 30",
+	"DORMANCY_DAYS":        "days without authentication after which a service account is dormant — e.g. 90",
+	"BACKUP_IDENTITY":      "the one service account allowed to write backups — e.g. backup-writer@proj.iam.gserviceaccount.com",
+	"PRODUCTION_PROJECTS":  "regular expressions matching production project IDs, comma-separated — e.g. ^acme-prod-,^acme-pci-",
+	"PRODUCTION_REGIONS":   "regions production data lives in, comma-separated — e.g. us-west1,us-east1",
 }
 
 func neededPlaceholders(checks []check) []string {

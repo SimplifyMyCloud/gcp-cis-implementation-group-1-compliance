@@ -1,6 +1,6 @@
 # REVIEW triage — easy call vs manual
 
-**Status:** adopted 2026-09-15. Next: automate every ⚙️ check and every A check that can be scored once the operator supplies a prerequisite value (e.g. approved container registries) — in progress.
+**Status:** adopted and implemented 2026-09-15 — see [Results](#results).
 
 The audit's checks fall into three buckets:
 
@@ -177,3 +177,46 @@ Each needs a written procedure: what to gather (API or console), who to ask, and
    **prerequisite**: a value the operator supplies in `audit.env` (e.g. approved container registries).
 2. **⚙️ checks move to fully automated now**, together with any A or B check a prerequisite makes scorable.
 3. *Open:* format for B's manual procedures — a section per check in `cis-ig1-cli-validation.md`, or a separate document.
+
+## Results
+
+Implemented 2026-09-15. **68 checks now score themselves**: their commands print a line only for something
+non-compliant, and the pass criterion opens "Empty output". Six inventory checks became **Evidence**: PASS once the
+record is captured, output kept.
+
+| | Before | After |
+|---|---|---|
+| Auto-scored (PASS/FAIL or evidence) | 41 | **109** |
+| REVIEW — a human reads the output | 116 | **48** |
+| Cross-references / by hand | 30 / 1 | 30 / 1 |
+| Organization / project pass | 68 / 90 | 71 / 87 |
+
+**Converted:** every ⚙️ check above except V45 (SCC is an organization service; one project's API setting doesn't show it
+— needs redesign) and V103 (the recommender API exposes no recommendation age). Also converted: A checks V7, V20, V23,
+V39, V40, V52, V58, V97, V116, V118, V143, V157, V159, V161, V162, V165, V166, V168, V172; and B checks V22 and V26.
+
+**New prerequisites** (in `audit.env`, templated by `-init-config`):
+
+| Value | Checks it automates |
+|---|---|
+| `APPROVED_REGISTRIES` | V20, V22 |
+| `ALLOWED_LOCATIONS` | V23, V26 |
+| `LOG_RETENTION_DAYS` | V40 |
+| `SQL_BACKUP_RETENTION` | V39 |
+| `DORMANCY_DAYS` | V97 |
+| `BACKUP_IDENTITY` | V161, V162 |
+| `PRODUCTION_PROJECTS` | V138, V165, V166 |
+| `PRODUCTION_REGIONS` | V168 |
+
+**Still REVIEW from bucket A:** V35, V71 (allowlists needing judgement), V45, V102, V103, V105, V129, V183.
+
+**Verification.** Every converted check ran against the test organization (org pass, `iq9-gcp-dev-yamato`,
+`simplifymycloud-dev`) with prerequisites set: all passes `RUN STATUS: OK`, 0 ERROR, 0 DENIED, each FAIL checked against
+the live resource. Checks for products the test org doesn't run (GKE clusters, pods, patch jobs, SSL policies, Spanner)
+were additionally tested against sample JSON with compliant and non-compliant items. Not verifiable here: a locked
+retention policy, a CMEK default key, a Firestore backup schedule present. Bugs found: BUG-041 to BUG-045.
+
+**Behaviour to know:**
+- V58 fails every VPC without an egress deny rule, because the implied allow-all egress applies.
+- V97 reports a service account created in the last `DORMANCY_DAYS` as "no authentication recorded".
+- V161/V162 flag the `projectEditor:`/`projectOwner:` convenience members Cloud Storage adds by default.

@@ -8,8 +8,8 @@ How to validate a GCP Organization against CIS IG1 using the documents and scrip
 
 | | Category | Count | Who |
 |---|---|---|---|
-| **1** | CLI one-liner, unambiguous pass/fail | 39 | `audit-run.go` scores it |
-| **2** | CLI-verifiable, output needs judgement | 149 | `audit-run.go` runs it and saves the output; marked **REVIEW** for a human |
+| **1** | CLI check, unambiguous pass/fail | 109 | `audit-run.go` scores it |
+| **2** | CLI-verifiable, output needs judgement | 79 | `audit-run.go` runs it and saves the output; marked **REVIEW** for a human |
 | **3** | A GCP task with no CLI surface — Admin Console, image build, a test that must be performed | 30 | Human, step by step |
 | **4** | Process, policy or documentation | 72 | Human, evidence-based |
 
@@ -17,8 +17,8 @@ How to validate a GCP Organization against CIS IG1 using the documents and scrip
 
 ## Two passes, in this order
 
-1. **Organization** — 68 checks, run once. The posture every project inherits.
-2. **Project** — 90 checks, run **once per project**, targeted explicitly.
+1. **Organization** — 71 checks, run once. The posture every project inherits.
+2. **Project** — 87 checks, run **once per project**, targeted explicitly.
 
 The organization pass goes first because its findings explain the project results. Within a project pass, every resource of the relevant kind is checked, and one non-compliant resource fails the requirement.
 
@@ -146,21 +146,31 @@ Any `DENIED` is a missing grant on the **service account**. **Fix it and rerun b
 
 ---
 
-## Phase 4 — Gather the three values that cannot be discovered
+## Phase 4 — Gather the prerequisite values
 
 Checks discover their own resources. Where a safeguard concerns projects, Cloud SQL instances, GKE clusters, buckets, KMS keys or Cloud Routers, the command enumerates **every** one — because a requirement is met only when every resource meets it. One non-compliant instance out of ten fails the check, and the output names which one.
 
-Three values remain, because they depend on your naming rather than on anything queryable:
+Eleven values remain, because they depend on your naming or your policy rather than on anything queryable:
 
 ```bash
 go run audit-run.go -init-config ./audit-state/audit.env
 ```
 
-| Value | What it is |
-|---|---|
-| `BACKUP_BUCKET` | The bucket holding backups (6 checks) |
-| `TFSTATE_BUCKET` | The bucket holding Terraform state (1 check) |
-| `BACKUP_PROJECT` | The project holding isolated backup copies (2 checks) |
+| Value | What it is | Example | Checks |
+|---|---|---|---|
+| `BACKUP_BUCKET` | The bucket holding backups | `acme-backups` | 6 |
+| `TFSTATE_BUCKET` | The bucket holding Terraform state | `acme-tf-state` | 1 |
+| `BACKUP_PROJECT` | The project holding isolated backup copies | `acme-backup` | 2 |
+| `APPROVED_REGISTRIES` | Approved container registry prefixes | `us-docker.pkg.dev/acme,gke.gcr.io` | 2 |
+| `ALLOWED_LOCATIONS` | Locations data may live in | `us,us-central1,us-west1` | 2 |
+| `LOG_RETENTION_DAYS` | Minimum log bucket retention, days | `400` | 1 |
+| `SQL_BACKUP_RETENTION` | Minimum automated backups per Cloud SQL instance | `30` | 1 |
+| `DORMANCY_DAYS` | Days without authentication before a service account is dormant | `90` | 1 |
+| `BACKUP_IDENTITY` | The one service account allowed to write backups | `backup-writer@acme-backup.iam.gserviceaccount.com` | 2 |
+| `PRODUCTION_PROJECTS` | Regular expressions matching production project IDs | `^acme-prod-,^acme-pci-` | 3 |
+| `PRODUCTION_REGIONS` | Regions production data lives in | `us-west1,us-east1` | 1 |
+
+Lists are comma-separated with no spaces. Each value turns a judgement call into a PASS/FAIL, so these checks are scored automatically.
 
 **If one does not exist, write `none`, not blank.**
 
@@ -190,7 +200,7 @@ go run audit-run.go -scope=org -org="$ORG_ID" \
   2>&1 | tee ./audit-state/org-run.log
 ```
 
-68 checks. It exits non-zero whenever a check FAILs — that is findings, not a broken run. Read `01-automated-results.md` before starting the project passes — an org-level `DENIED` means the project passes will be unreliable too.
+71 checks. It exits non-zero whenever a check FAILs — that is findings, not a broken run. Read `01-automated-results.md` before starting the project passes — an org-level `DENIED` means the project passes will be unreliable too.
 
 - [ ] Organization pack produced
 - [ ] No `DENIED` remaining
@@ -219,7 +229,7 @@ Pick one from that list and export it. Everything below reads `$PROJECT`, so thi
 export PROJECT=<paste-a-projectId-from-the-list-above>
 ```
 
-Confirm it resolves before running 90 checks against a typo:
+Confirm it resolves before running 87 checks against a typo:
 
 ```bash
 gcloud projects describe "$PROJECT" --format="value(projectId,name,lifecycleState)"
@@ -236,7 +246,7 @@ go run audit-run.go -scope=project -org="$ORG_ID" -project="$PROJECT" \
   2>&1 | tee "./audit-state/projects/$PROJECT.log"
 ```
 
-90 checks. Repeat from **Set the project** for each entry in `projects.txt`.
+87 checks. Repeat from **Set the project** for each entry in `projects.txt`.
 
 To see which projects you have already covered:
 
