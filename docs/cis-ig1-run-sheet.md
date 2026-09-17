@@ -79,13 +79,15 @@ Must print the service account. `gcloud auth list` will still show *your* addres
 
 A new impersonation grant can take a minute or two to work. Until it does, commands fail with `Failed to impersonate`.
 
-## A6. Prove it is read-only
+## A6. Prove it took effect
 
 ```bash
-gcloud iam service-accounts create throwaway-check --project="$AUDIT_PROJECT"
+curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
 ```
 
-The **correct** result is an error naming the audit account: `[cis-ig1-auditor@…] does not have permission`. If it says `Failed to impersonate`, the grant from A4 hasn't propagated — wait a minute and retry. If it succeeds, impersonation is not active — delete the account and redo A5.
+Must print `cis-ig1-auditor@…` — the identity every later command runs as. Your own address means impersonation is not active: redo A5. `Failed to impersonate` means the grant from A4 hasn't propagated — wait a minute and retry.
+
+This reads and changes nothing. **Do not prove it by attempting a write instead:** a denied write is inconclusive (an operator without the permission is denied either way), and a successful one creates a real resource in the customer's project.
 
 ## A7. Smoke test
 

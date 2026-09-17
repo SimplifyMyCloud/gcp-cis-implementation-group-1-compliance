@@ -1254,3 +1254,44 @@ auth/impersonate_service_account` when finished, so a later command in the same 
 auditor. Mirrors run sheet A1–A6 so the two documents cannot drift into disagreement.
 
 **Verification** — parser unaffected: 86 org / 103 project checks, unchanged.
+
+## BUG-048 — the impersonation proof was a write attempt, and proved nothing
+
+| | |
+|---|---|
+| Found | 2026-09-17, user working the new setup steps |
+| Component | `docs/cis-ig1-cli-validation.md` step 5, `docs/cis-ig1-run-sheet.md` A6, `gcloud/manual-steps.md` |
+| Severity | **inconclusive test, and a write during a read-only audit** |
+
+**Reported** — "running setup step 5 — prove it took effect — I run the CLI and get an error that I do not have
+permissions to create, which is by design, this service account is totally read-only."
+
+The error was the documented pass, which is the first problem: a step whose success looks like a failure stops the
+operator every time.
+
+**Cause** — the proof was `gcloud iam service-accounts create throwaway-check`, reading the denial as evidence that
+impersonation had taken effect. Three defects:
+
+1. **It does not prove what it claims.** An operator who lacks `iam.serviceAccounts.create` is denied whether or not
+   impersonation is active. The denial is identical in shape; only the identity named in the message differs, and the
+   instruction did not turn on reading that carefully.
+2. **It writes.** If impersonation is *not* active and the operator holds Owner, it succeeds — creating a real service
+   account in the customer's project, which the doc then asks them to delete. A read-only engagement should not open
+   by creating a principal, and the attempt lands in the customer's Admin Activity log either way.
+3. **Success-as-error** is a confusing instruction to put in front of someone who has not run the audit before.
+
+**Fix** — ask Google who the token belongs to, which reads and names the identity outright:
+
+```
+curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
+```
+
+Returns the impersonated account when impersonation is active, the operator's own address when it is not. No
+ambiguity, no write, nothing to clean up. Applied in all three documents, with a note in each saying why not to
+substitute a write test.
+
+**Verification** — run live against the test org with impersonation active:
+
+```
+cis-ig1-auditor@simplifymycloud-dev.iam.gserviceaccount.com
+```

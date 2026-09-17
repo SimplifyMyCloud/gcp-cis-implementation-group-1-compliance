@@ -233,13 +233,15 @@ That must print the service account.
 
 > **`gcloud auth list` will still show your own address, and that is correct.** Impersonation does not switch accounts — you stay authenticated as yourself, and gcloud exchanges that credential for a short-lived token on every call. That is exactly why audit logs record both identities: the service account in `principalEmail`, and you in `serviceAccountDelegationInfo`.
 
-Prove the read-only identity is in force — this should be **denied**:
+Prove the identity is in force. This reads and changes nothing:
 
 ```bash
-gcloud iam service-accounts create throwaway-check --project="$PROJECT"
+curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
 ```
 
-`PERMISSION_DENIED` is the correct result. If it succeeds, impersonation is not active — delete the account and check step 7.
+Must print `cis-ig1-auditor@…`. Your own address means impersonation is not active — check step 7.
+
+Do not test this with a write instead. A denied write proves nothing on its own, since an operator lacking the permission is denied whether or not impersonation is active, and a successful one leaves a real service account behind in the project.
 
 ---
 

@@ -75,14 +75,18 @@ A fresh grant takes a minute or two to propagate. Until it does, commands fail w
 
 ### 5. Prove it took effect
 
+Ask Google who the token belongs to. This reads; it changes nothing:
+
 ```bash
-gcloud iam service-accounts create throwaway-check --project="$AUDIT_PROJECT"
+curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
 ```
 
-The **correct** outcome is a failure naming the audit account: `[cis-ig1-auditor@…] does not have permission`.
+Expected: `cis-ig1-auditor@…`. That is the identity every subsequent command runs as.
 
-- `Failed to impersonate` — the grant has not propagated. Wait and retry.
-- **It succeeds** — impersonation is not active and you are running as yourself. Delete the account you just created and redo step 4.
+- **Your own address** — impersonation is not active. Redo step 4 and check `gcloud config get-value auth/impersonate_service_account` prints the account.
+- `Failed to impersonate` — the grant has not propagated. Wait a minute and retry.
+
+> **Do not test this by attempting to create something.** A write that fails proves nothing on its own — an operator without the permission is denied whether or not impersonation is active — and a write that *succeeds* means you have created a real resource in the customer's project and now have to remove it. An audit that promises to be read-only should not open with a write, and the attempt is recorded in their Admin Activity log either way.
 
 ### 6. Placeholder values
 
