@@ -27,7 +27,7 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 | IG1 safeguards | 56 |
 | GCP-actionable | 44 (the other 12 are training, endpoints, removable media) |
 | Checklist requirements | 290 |
-| With a CLI check | 188 · **109 auto-scored**, 79 need a human to read the output |
+| With a CLI check | 188 · **96 auto-scored**, 92 need a human to read the output |
 | Manual | 102 · 30 console tasks, 72 process and documentation |
 
 100% here is the GCP half of IG1, not IG1. Say so when reporting.
@@ -47,7 +47,7 @@ eval "$(terraform output -raw impersonate_command)"
 
 cd ../..
 go run audit-run.go -scope=org -org=$ORG_ID -init-config ./audit-state/audit.env
-# edit audit.env — the 11 prerequisite values (buckets, approved registries, allowed locations, thresholds…; none if absent)
+# edit audit.env — APPROVED_REGISTRIES (ALLOWED_LOCATIONS defaults to the continental US)
 
 go run audit-run.go -scope=org -org=$ORG_ID -config ./audit-state/audit.env -pack ./audit-state/org
 go run audit-run.go -scope=project -org=$ORG_ID -project=PROJECT -config ./audit-state/audit.env -pack ./audit-state/projects/PROJECT

@@ -38,7 +38,7 @@ Five organization checks, one per permission family. Any `DENIED` is a missing g
 go run audit-run.go -init-config ./audit-state/audit.env
 ```
 
-Eleven prerequisite values — buckets, backup project, approved registries, allowed locations, retention and dormancy thresholds, backup identity, production projects and regions. The template names each with an example; the full table is in [CLI validation](cis-ig1-cli-validation.md). Everything else is discovered.
+One prerequisite value — `APPROVED_REGISTRIES`, the registry prefixes images may come from. `ALLOWED_LOCATIONS` defaults to the continental United States and only needs setting if data lives elsewhere. Everything else is discovered, or asked of a human at review time.
 
 **If one does not exist, write `none`, not blank.** Blank gives `SKIP` ("could not check"); `none` gives `FAIL`, which is the truth — no backup bucket is safeguard 11.3 failing.
 
@@ -81,7 +81,7 @@ Each pack is three files: `01-automated-results.md` (the results table, then a *
 | `N/A` | Product absent, not a failure |
 | `DENIED` | Missing permission — fix before trusting anything |
 
-109 of 188 are auto-scored. The other 79 are `REVIEW` with output saved, because no machine can tell you whether your org policy list matches your intended baseline.
+96 of 188 are auto-scored. The other 92 are `REVIEW` with output saved, because no machine can tell you whether your org policy list matches your intended baseline, or which of your buckets holds the backups.
 
 Useful flags: `-list` · `-only V27,V91` · `-parallel 4` · `-timeout 10m` · `-review review.md` · `-format=md -out f.md`
 

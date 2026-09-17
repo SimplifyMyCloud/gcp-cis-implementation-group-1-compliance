@@ -16,8 +16,8 @@ Every requirement carries a marker showing how it gets checked and who does it.
 
 | | Group | Count | How |
 |---|---|---|---|
-| ⚙️ | **Automated** | 109 | `audit-run.go` runs it and scores it pass/fail |
-| 🔍 | **CLI, human reads it** | 79 | `audit-run.go` runs it and saves the output; you judge the result |
+| ⚙️ | **Automated** | 96 | `audit-run.go` runs it and scores it pass/fail |
+| 🔍 | **CLI, human reads it** | 92 | `audit-run.go` runs it and saves the output; you judge the result |
 | 🖥️ | **GCP, no CLI** | 30 | Admin Console, image build, or a test you perform by hand |
 | 👥 | **Process and people** | 72 | Answered by a conversation and a document, not a command |
 
@@ -191,8 +191,8 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 - [ ] 👥 Retention periods defined per data class and documented
 - [ ] ⚙️ Object Lifecycle Management rules applied to Cloud Storage buckets → [V37](cis-ig1-cli-validation.md#v37)
 - [ ] ⚙️ BigQuery default table and partition expiration configured on datasets → [V38](cis-ig1-cli-validation.md#v38)
-- [ ] ⚙️ Cloud SQL backup retention windows set to the defined period → [V39](cis-ig1-cli-validation.md#v39)
-- [ ] ⚙️ Log bucket retention set explicitly (not left at the `_Default` 30 days) → [V40](cis-ig1-cli-validation.md#v40)
+- [ ] 🔍 Cloud SQL backup retention windows set to the defined period → [V39](cis-ig1-cli-validation.md#v39)
+- [ ] 🔍 Log bucket retention set explicitly (not left at the `_Default` 30 days) → [V40](cis-ig1-cli-validation.md#v40)
 - [ ] 🔍 Buckets and datasets with no retention rule identified and remediated → [V41](cis-ig1-cli-validation.md#v41)
 
 ### 3.5 Securely Dispose of Data
@@ -316,7 +316,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 🖥️ Dormancy threshold defined (e.g. 45 days without authentication)
 - [ ] 🔍 Human account activity assessed via Cloud Audit Logs / Admin Console reports → [V96](cis-ig1-cli-validation.md#v96)
-- [ ] ⚙️ Service account activity assessed via IAM activity analyser and authentication logs → [V97](cis-ig1-cli-validation.md#v97)
+- [ ] 🔍 Service account activity assessed via IAM activity analyser and authentication logs → [V97](cis-ig1-cli-validation.md#v97)
 - [ ] 🔍 Unused service accounts disabled before deletion, then deleted → [V98](cis-ig1-cli-validation.md#v98)
 - [ ] 🖥️ Dormant account review runs on a recurring schedule, not on request
 - [ ] 🖥️ Departed-employee bindings removed as part of the leaver process
@@ -460,7 +460,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 
 - [ ] 🔍 Log bucket retention set explicitly to the defined period (not the 30-day `_Default`) → [V137](cis-ig1-cli-validation.md#v137)
 - [ ] 👥 Sink destination sized and budgeted for the retention period
-- [ ] ⚙️ Logs stored in a **dedicated logging project** with IAM separated from workload projects → [V138](cis-ig1-cli-validation.md#v138)
+- [ ] 🔍 Logs stored in a **dedicated logging project** with IAM separated from workload projects → [V138](cis-ig1-cli-validation.md#v138)
 - [ ] ⚙️ Bucket Lock retention policy applied to the log destination for tamper resistance → [V139](cis-ig1-cli-validation.md#v139)
 - [ ] 🔍 No workload-project principals hold delete permission on log storage → [V140](cis-ig1-cli-validation.md#v140)
 - [ ] 🔍 Storage capacity and cost monitored with alerting before ingestion is throttled or dropped → [V141](cis-ig1-cli-validation.md#v141)
@@ -515,7 +515,7 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 - [ ] 👥 Written recovery process covering each data-bearing service in use
 - [ ] 👥 RPO and RTO defined per workload tier
 - [ ] 👥 Recovery roles and escalation path named
-- [ ] ⚙️ Terraform state backend versioning and recovery included in scope → [V152](cis-ig1-cli-validation.md#v152)
+- [ ] 🔍 Terraform state backend versioning and recovery included in scope → [V152](cis-ig1-cli-validation.md#v152)
 - [ ] 👥 Process reviewed annually and after any recovery event
 
 ### 11.2 Perform Automated Backups
@@ -532,20 +532,20 @@ A secure-by-default organization still has 44 safeguards to satisfy. The baselin
 ### 11.3 Protect Recovery Data
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] ⚙️ Backup data encrypted, with CMEK where key control is required → [V159](cis-ig1-cli-validation.md#v159)
+- [ ] 🔍 Backup data encrypted, with CMEK where key control is required → [V159](cis-ig1-cli-validation.md#v159)
 - [ ] 🔍 KMS key access separated from production workload identities → [V160](cis-ig1-cli-validation.md#v160)
-- [ ] ⚙️ IAM on backup storage restricted to a dedicated backup role → [V161](cis-ig1-cli-validation.md#v161)
-- [ ] ⚙️ No production workload service account holds delete permission on backups → [V162](cis-ig1-cli-validation.md#v162)
-- [ ] ⚙️ **Bucket Lock** retention policy applied to backup buckets (WORM) → [V163](cis-ig1-cli-validation.md#v163)
+- [ ] 🔍 IAM on backup storage restricted to a dedicated backup role → [V161](cis-ig1-cli-validation.md#v161)
+- [ ] 🔍 No production workload service account holds delete permission on backups → [V162](cis-ig1-cli-validation.md#v162)
+- [ ] 🔍 **Bucket Lock** retention policy applied to backup buckets (WORM) → [V163](cis-ig1-cli-validation.md#v163)
 - [ ] 🔍 Backup deletion events logged and alerted on → [V164](cis-ig1-cli-validation.md#v164)
 
 ### 11.4 Establish and Maintain an Isolated Instance of Recovery Data
 **Status:** `[ ] Compliant`  `[ ] PR Submitted`  `[ ] Not Compliant`
 
-- [ ] ⚙️ At least one backup copy held in a **separate project** from the production workload → [V165](cis-ig1-cli-validation.md#v165)
-- [ ] ⚙️ Backup project sits under a separate folder with distinct IAM inheritance → [V166](cis-ig1-cli-validation.md#v166)
-- [ ] ⚙️ No shared credential can both access production and delete the isolated copy → [V167](cis-ig1-cli-validation.md#v167)
-- [ ] ⚙️ Copy held in a different region, or in multi-region storage → [V168](cis-ig1-cli-validation.md#v168)
+- [ ] 🔍 At least one backup copy held in a **separate project** from the production workload → [V165](cis-ig1-cli-validation.md#v165)
+- [ ] 🔍 Backup project sits under a separate folder with distinct IAM inheritance → [V166](cis-ig1-cli-validation.md#v166)
+- [ ] 🔍 No shared credential can both access production and delete the isolated copy → [V167](cis-ig1-cli-validation.md#v167)
+- [ ] 🔍 Copy held in a different region, or in multi-region storage → [V168](cis-ig1-cli-validation.md#v168)
 - [ ] 🖥️ Isolation verified by test — attempt access with a production identity and confirm denial
 - [ ] 🖥️ Restore from the isolated copy tested and dated
 

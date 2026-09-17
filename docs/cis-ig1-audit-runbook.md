@@ -8,8 +8,8 @@ How to validate a GCP Organization against CIS IG1 using the documents and scrip
 
 | | Category | Count | Who |
 |---|---|---|---|
-| **1** | CLI check, unambiguous pass/fail | 109 | `audit-run.go` scores it |
-| **2** | CLI-verifiable, output needs judgement | 79 | `audit-run.go` runs it and saves the output; marked **REVIEW** for a human |
+| **1** | CLI check, unambiguous pass/fail | 96 | `audit-run.go` scores it |
+| **2** | CLI-verifiable, output needs judgement | 92 | `audit-run.go` runs it and saves the output; marked **REVIEW** for a human |
 | **3** | A GCP task with no CLI surface — Admin Console, image build, a test that must be performed | 30 | Human, step by step |
 | **4** | Process, policy or documentation | 72 | Human, evidence-based |
 
@@ -150,7 +150,7 @@ Any `DENIED` is a missing grant on the **service account**. **Fix it and rerun b
 
 Checks discover their own resources. Where a safeguard concerns projects, Cloud SQL instances, GKE clusters, buckets, KMS keys or Cloud Routers, the command enumerates **every** one — because a requirement is met only when every resource meets it. One non-compliant instance out of ten fails the check, and the output names which one.
 
-Eleven values remain, because they depend on your naming or your policy rather than on anything queryable:
+Two values remain, because they are policy rather than anything queryable:
 
 ```bash
 go run audit-run.go -init-config ./audit-state/audit.env
@@ -158,21 +158,14 @@ go run audit-run.go -init-config ./audit-state/audit.env
 
 | Value | What it is | Example | Checks |
 |---|---|---|---|
-| `BACKUP_BUCKET` | The bucket holding backups | `acme-backups` | 6 |
-| `TFSTATE_BUCKET` | The bucket holding Terraform state | `acme-tf-state` | 1 |
-| `BACKUP_PROJECT` | The project holding isolated backup copies | `acme-backup` | 2 |
-| `APPROVED_REGISTRIES` | Approved container registry prefixes | `us-docker.pkg.dev/acme,gke.gcr.io` | 2 |
-| `ALLOWED_LOCATIONS` | Locations data may live in | `us,us-central1,us-west1` | 2 |
-| `LOG_RETENTION_DAYS` | Minimum log bucket retention, days | `400` | 1 |
-| `SQL_BACKUP_RETENTION` | Minimum automated backups per Cloud SQL instance | `30` | 1 |
-| `DORMANCY_DAYS` | Days without authentication before a service account is dormant | `90` | 1 |
-| `BACKUP_IDENTITY` | The one service account allowed to write backups | `backup-writer@acme-backup.iam.gserviceaccount.com` | 2 |
-| `PRODUCTION_PROJECTS` | Regular expressions matching production project IDs | `^acme-prod-,^acme-pci-` | 3 |
-| `PRODUCTION_REGIONS` | Regions production data lives in | `us-west1,us-east1` | 1 |
+| `APPROVED_REGISTRIES` | Registry prefixes images may come from, matched from the left | `us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io` | 2 |
+| `ALLOWED_LOCATIONS` | Locations data may live in. **Defaults to the continental US** — set only if data lives elsewhere | `europe-west1,eu,EU` | 2 |
 
-Lists are comma-separated with no spaces. Each value turns a judgement call into a PASS/FAIL, so these checks are scored automatically.
+Lists are comma-separated with no spaces.
 
-**If one does not exist, write `none`, not blank.**
+Everything else the audit needs to know about your policy — which bucket holds backups, how long logs must be kept, what counts as a dormant service account, which projects are production — it asks a person instead. Those differ by team and by project even inside one organization, so a single value for the estate would be wrong more often than right. Those checks still run and still gather the evidence; they report **REVIEW**, and their output is what you take into that conversation.
+
+**If a value does not exist, write `none`, not blank.**
 
 Blank produces `SKIP`, which reads as "we could not check." `none` produces `FAIL`, which is the truth: an organization with no backup bucket has not skipped safeguard 11.3, it has failed it. Blank values quietly turn non-compliance into missing data, and that is how a finding disappears from a report.
 

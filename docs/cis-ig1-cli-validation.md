@@ -6,8 +6,8 @@ Every IG1 requirement falls into one of four categories. This document covers th
 
 | | Category | Count | Who runs it |
 |---|---|---|---|
-| **1** | CLI check, unambiguous pass/fail | 109 | `audit-run.go` scores it (103 PASS/FAIL, 6 evidence captures) |
-| **2** | CLI-verifiable, but the output needs judgement | 79 | `audit-run.go` runs it, saves the output, marks it **REVIEW** — a human decides (48 checks, 30 cross-references, 1 by hand) |
+| **1** | CLI check, unambiguous pass/fail | 96 | `audit-run.go` scores it (90 PASS/FAIL, 6 evidence captures) |
+| **2** | CLI-verifiable, but the output needs judgement | 92 | `audit-run.go` runs it, saves the output, marks it **REVIEW** — a human decides (61 checks, 30 cross-references, 1 by hand) |
 | **3** | A GCP task with no CLI surface (Admin Console, image build, a test that must be performed) | 30 | Human, step by step |
 | **4** | Process, policy or documentation — nothing to do with infrastructure state | 72 | Human, evidence-based |
 
@@ -62,7 +62,7 @@ Export it again for every project you move to. Leave it unset and the commands s
 
 ### 4. Create the run directory and config
 
-The service account already exists. What each run needs is somewhere to put its output and a config holding the eleven prerequisite values.
+The service account already exists. What each run needs is somewhere to put its output, and a config file.
 
 ```bash
 mkdir -p ./audit-state/projects
@@ -78,19 +78,9 @@ That writes a template listing every value this run needs, each with an example 
 open -e ./audit-state/audit.env      # or: vi ./audit-state/audit.env
 ```
 
-**Every one of these values comes from the customer, not from the estate.** Which bucket holds backups, which registries are approved, how long logs must be kept, which projects are production — none of it is discoverable, and guessing it wrong fails quietly. A `PRODUCTION_PROJECTS` regex matching nothing empties three checks without saying so.
+**`APPROVED_REGISTRIES` comes from the customer, not the estate** — which registries are approved is a policy, and what is in use today is just what is in use today. Ask.
 
-Ask for the names. Then confirm what they gave you actually exists — one organization-wide query, server-side filtered, which costs the same on ten buckets or a hundred thousand:
-
-```bash
-gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=storage.googleapis.com/Bucket \
-  --query='name:backup' --format="value(displayName,project)"
-```
-
-Swap `name:backup` for `name:state` to confirm the Terraform state bucket. Expect several near-matches — a name alone never tells you which bucket is *the* backup, which is why this confirms an answer rather than producing one.
-
-Do not enumerate every bucket in every project to go looking. On a large organization that is one API call per project returning tens of thousands of rows, and it still leaves you picking a name out of a list you cannot verify.
+**`ALLOWED_LOCATIONS` already defaults to the continental United States.** Leave it alone unless data legitimately lives elsewhere, in which case set it to the full list — the default is not additive, so an EU customer writes `europe-west1,eu,EU` rather than appending to it.
 
 **If a resource does not exist, write `none`, not blank.** Blank gives SKIP and disappears from the report. `none` gives FAIL, which is the truth — a backup bucket nobody created is non-compliance, not missing data.
 
@@ -126,7 +116,7 @@ Expected: `cis-ig1-auditor@…`. That is the identity every subsequent command r
 
 ### 7. Placeholder values
 
-Eleven bare words in the commands below (`APPROVED_REGISTRIES`, `DORMANCY_DAYS`, `BACKUP_BUCKET` and the rest) are substituted by `audit-run.go` from its config file. Running by hand, **replace them yourself** — your shell will not, and an unsubstituted placeholder produces a command that runs and returns nothing, which reads like a pass.
+`APPROVED_REGISTRIES` and `ALLOWED_LOCATIONS` appear as bare words in the commands below and are substituted by `audit-run.go` from its config file. Running by hand, **replace them yourself** — your shell will not, and an unsubstituted placeholder produces a command that runs and returns nothing, which reads like a pass.
 
 If a resource genuinely does not exist, that is a **finding**, not a check to skip.
 
@@ -155,23 +145,18 @@ Run the organization pass first. It establishes the posture every project inheri
 
 The project pass targets one project per invocation. Within that project it enumerates **every** resource of the relevant kind: every Cloud SQL instance, every node pool, every KMS key, every bucket. A requirement is met only when every resource meets it — one non-compliant instance out of ten fails the check, and the output names which one.
 
-**Prerequisites.** Eleven values can't be discovered, because they depend on your naming or your policy rather than on anything queryable. Supply them in the `-config` file (`-init-config` writes a template), or set one to `none` if it does not exist — which is a finding, not a skip.
+**Prerequisites.** Two values, both with sensible behaviour if you leave them alone. Supply them in the `-config` file (`-init-config` writes a template).
 
 | Value | What it is | Example | Checks |
 |---|---|---|---|
-| `BACKUP_BUCKET` | The bucket holding backups | `acme-backups` | 6 |
-| `TFSTATE_BUCKET` | The bucket holding Terraform state | `acme-tf-state` | 1 |
-| `BACKUP_PROJECT` | The project holding isolated backup copies | `acme-backup` | 2 |
-| `APPROVED_REGISTRIES` | Approved container registry prefixes | `us-docker.pkg.dev/acme,gke.gcr.io` | 2 |
-| `ALLOWED_LOCATIONS` | Locations data may live in | `us,us-central1,us-west1` | 2 |
-| `LOG_RETENTION_DAYS` | Minimum log bucket retention, days | `400` | 1 |
-| `SQL_BACKUP_RETENTION` | Minimum automated backups per Cloud SQL instance | `30` | 1 |
-| `DORMANCY_DAYS` | Days without authentication before a service account is dormant | `90` | 1 |
-| `BACKUP_IDENTITY` | The one service account allowed to write backups | `backup-writer@acme-backup.iam.gserviceaccount.com` | 2 |
-| `PRODUCTION_PROJECTS` | Regular expressions matching production project IDs | `^acme-prod-,^acme-pci-` | 3 |
-| `PRODUCTION_REGIONS` | Regions production data lives in | `us-west1,us-east1` | 1 |
+| `APPROVED_REGISTRIES` | Registry prefixes images may come from. Match the address as it appears in the image reference, from the left: host, optionally host plus project. | `us-docker.pkg.dev/acme,us-west1-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io` | 2 |
+| `ALLOWED_LOCATIONS` | Locations data may live in. **Defaults to the continental United States** — set it only if data legitimately lives elsewhere. | `europe-west1,eu,EU` | 2 |
 
-Lists are comma-separated with no spaces. Each value turns a judgement call into a PASS/FAIL, so these checks are scored automatically.
+Lists are comma-separated with no spaces. `EXCLUDE_PROJECTS` (default `^sys-`) is also read from this file; it is a filter, not a compliance value.
+
+An image reference is matched by prefix, so `us-docker.pkg.dev/acme` accepts `us-docker.pkg.dev/acme/api:v3` and rejects `us-docker.pkg.dev/other/api:v3`. Give the host alone (`gke.gcr.io`) to accept everything under it.
+
+**Everything else the audit needs to know, it asks a human.** Which bucket holds backups, how long logs must be kept, how many days make a service account dormant, which projects are production — these differ by team and by project even inside one organization, and a single value for the whole estate would be wrong more often than right. The checks that depend on them still run and still gather the evidence; they report **REVIEW**, and the output is what you take into that conversation.
 
 **Required roles.** Verified by running a representative check from each family against a live organization.
 
@@ -818,27 +803,23 @@ done
 **Cloud SQL backup retention set to the defined period** · checklist `3.4#4` · scope: project
 
 ```bash
-min=SQL_BACKUP_RETENTION
 gcloud sql instances list --project="$PROJECT_ID" --format=json \
-  | jq -r --argjson min "$min" '.[] | select(.instanceType != "READ_REPLICA_INSTANCE")
-    | (.settings.backupConfiguration.backupRetentionSettings.retainedBackups // 0 | tonumber) as $n
-    | select($n < $min) | "BACKUP RETENTION BELOW \($min): \(.name) keeps \($n)"'
+  | jq -r '.[] | select(.instanceType != "READ_REPLICA_INSTANCE")
+    | "\(.name): retains \(.settings.backupConfiguration.backupRetentionSettings.retainedBackups // 0) backup(s), automated backups \(if .settings.backupConfiguration.enabled then "on" else "OFF" end)"'
 ```
 
-**Pass:** Empty output. Requires the SQL_BACKUP_RETENTION prerequisite. Each line is an instance keeping fewer backups than required.
+**Pass:** Every Cloud SQL instance with the number of automated backups it retains. Compare against the retention this team has committed to — it differs per project and team, so ask. Any instance showing `automated backups OFF` fails regardless of the number.
 
 #### V40
 
 **Log bucket retention set explicitly** · checklist `3.4#5` · scope: org
 
 ```bash
-min=LOG_RETENTION_DAYS
 gcloud logging buckets list --organization=$ORG_ID --location=global --format=json \
-  | jq -r --argjson min "$min" '.[] | select((.retentionDays // 30) < $min)
-    | "RETENTION BELOW \($min) DAYS: \(.name) (\(.retentionDays // 30))"'
+  | jq -r '.[] | "\(.name): \(.retentionDays // 30) days\(if .locked then " (locked)" else "" end)"'
 ```
 
-**Pass:** Empty output. Requires the LOG_RETENTION_DAYS prerequisite. Each line is a log bucket retained for less than the required period.
+**Pass:** Each organization log bucket and how long it retains. Compare against the period this organization requires — ask, it varies. `_Required` is fixed at 400 days and cannot be shortened; `_Default` starts at 30, which is short for an audit trail.
 
 #### V41
 
@@ -1656,22 +1637,19 @@ gcloud logging read \
 
 ```bash
 set -o pipefail
-days=DORMANCY_DAYS
 sas=$(gcloud iam service-accounts list --project="$PROJECT_ID" --filter="disabled=false" --format="value(email)") || exit 1
 act=$(gcloud policy-intelligence query-activity --activity-type=serviceAccountLastAuthentication \
   --project="$PROJECT_ID" --format=json) || exit 1
 if [ -n "$sas" ]; then
   printf '%s\n' "$sas" | while read -r sa; do
-    printf '%s' "$act" | jq -r --arg sa "$sa" --argjson days "$days" '(now - $days * 86400) as $cut
-      | ([.[] | select(.activity.serviceAccount.fullResourceName | endswith("/" + $sa)) | .activity.lastAuthenticatedTime] | first) as $t
-      | if $t == null then "DORMANT (no authentication recorded): \($sa)"
-        elif ($t | fromdateiso8601) < $cut then "DORMANT (last authenticated \($t)): \($sa)"
-        else empty end'
+    printf '%s' "$act" | jq -r --arg sa "$sa" '([.[] | select(.activity.serviceAccount.fullResourceName | endswith("/" + $sa)) | .activity.lastAuthenticatedTime] | first) as $t
+      | if $t == null then "\($sa): no authentication recorded"
+        else "\($sa): last authenticated \($t)" end'
   done
 fi
 ```
 
-**Pass:** Empty output. Requires the DORMANCY_DAYS prerequisite. Each line is an enabled service account with no authentication within that many days.
+**Pass:** Every enabled service account with the date it last authenticated. Judge against the dormancy period this team uses — ask, it differs per team. `no authentication recorded` covers both an account never used and one created recently, so check the creation date before disabling anything.
 
 #### V98
 
@@ -2309,26 +2287,22 @@ See V40.
 
 ```bash
 set -o pipefail
-prod=PRODUCTION_PROJECTS
-prod_re=${prod//,/|}
 dests=$(gcloud logging sinks list --organization=$ORG_ID --format=json \
   | jq -r '.[] | select(.includeChildren == true) | .destination') || exit 1
-found=0
+if [ -z "$dests" ]; then echo "NO AGGREGATED SINK: nothing routes organization logs centrally"; exit 0; fi
 while read -r d; do
   case "$d" in
     storage.googleapis.com/*)
       num=$(gcloud storage buckets describe "gs://${d#storage.googleapis.com/}" --raw --format="value(projectNumber)") || continue
       proj=$(gcloud projects list --filter="projectNumber=$num" --format="value(projectId)") || continue ;;
     */projects/*) proj=$(printf '%s' "$d" | sed -E 's|.*projects/([^/]+).*|\1|') ;;
-    *) continue ;;
+    *) proj="?" ;;
   esac
-  found=1
-  if printf '%s' "$proj" | grep -Eq -- "$prod_re"; then echo "LOGS ROUTED TO A PRODUCTION PROJECT: $proj ($d)"; fi
+  echo "AGGREGATED SINK -> $proj ($d)"
 done <<< "$dests"
-if [ "$found" -eq 0 ]; then echo "NO AGGREGATED SINK TO A LOGGING PROJECT"; fi
 ```
 
-**Pass:** Empty output. Requires the PRODUCTION_PROJECTS prerequisite. A line means no aggregated sink routes to a project, or one routes to a production project.
+**Pass:** Each aggregated sink and the project it delivers to. Confirm that project is a dedicated logging project rather than one carrying production workloads — which projects are production differs per customer, so ask. `NO AGGREGATED SINK` is a fail on its own.
 
 #### V139
 
@@ -2567,11 +2541,14 @@ gcloud compute ssh INSTANCE --tunnel-through-iap --project="$PROJECT_ID" \
 **Terraform state backend versioning in scope** · checklist `11.1#4` · scope: project
 
 ```bash
-v=$(gcloud storage buckets describe gs://TFSTATE_BUCKET --raw --format="value(versioning.enabled)") || exit 1
-if [ "$v" != "True" ]; then echo "TERRAFORM STATE VERSIONING OFF: gs://TFSTATE_BUCKET"; fi
+gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --read-mask='name,versionedResources' --format=json \
+  | jq -r '.[] | .versionedResources[]?.resource
+    | select(.name | test("state|terraform|tfstate"; "i"))
+    | "\(.name): versioning=\(.versioning.enabled // false)"'
 ```
 
-**Pass:** Empty output. A line means the Terraform state bucket is not versioned — state loss is a recovery event.
+**Pass:** Buckets whose name suggests a Terraform state backend, with versioning status. The name is a hint, not a fact — confirm with the team which bucket is actually the backend, and that it is versioned. There may be several, or none, and unversioned state turns a bad apply into a recovery event. No output means no bucket is named like a state backend, which is not the same as there being none.
 
 **Manual — process or documentation, not infrastructure:**
 
@@ -2687,11 +2664,13 @@ gcloud alpha monitoring policies list --project="$PROJECT_ID" \
 **Backup data encrypted with CMEK where required** · checklist `11.3#1` · scope: project
 
 ```bash
-k=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(encryption.defaultKmsKeyName)") || exit 1
-if [ -z "$k" ]; then echo "BACKUP BUCKET WITHOUT CMEK: gs://BACKUP_BUCKET"; fi
+gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --read-mask='name,versionedResources' --format=json \
+  | jq -r '.[] | .versionedResources[]?.resource
+    | "\(.name): \(.encryption.defaultKmsKeyName // "Google-managed key (no CMEK)")"'
 ```
 
-**Pass:** Empty output. A line means the backup bucket has no customer-managed encryption key.
+**Pass:** Every bucket in the project with its default encryption key. Identify which hold backups — ask the team, there may be several — and confirm those use a customer-managed key wherever policy requires one.
 
 #### V160
 
@@ -2712,42 +2691,41 @@ gcloud asset search-all-iam-policies --scope=projects/$PROJECT_ID \
 **Backup storage IAM restricted to a dedicated role** · checklist `11.3#3` · scope: project · needs `jq`
 
 ```bash
-id=BACKUP_IDENTITY
-gcloud storage buckets get-iam-policy gs://BACKUP_BUCKET --format=json \
-  | jq -r --arg id "$id" '.bindings[]?
+gcloud asset search-all-iam-policies --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --format=json \
+  | jq -r '.[]? | .resource as $r | .policy.bindings[]?
     | select(.role | test("objectCreator|objectAdmin|objectUser|storage.admin|legacyBucketWriter|legacyBucketOwner|roles/owner|roles/editor"))
-    | .role as $r | .members[] | select(sub("^(serviceAccount|user|group):"; "") != $id)
-    | "WRITE ACCESS BESIDES THE BACKUP IDENTITY: \(.) (\($r))"'
+    | "\($r | sub(".*/"; "")): \(.role) -> \(.members | join(" "))"'
 ```
 
-**Pass:** Empty output. Requires the BACKUP_IDENTITY prerequisite. Each line is another principal with write access to the backup bucket.
+**Pass:** Every principal able to write to each bucket in the project. For the buckets holding backups, confirm only the dedicated backup identity can write — ask the team which identity that is. `projectEditor:` and `projectOwner:` are present by default and are themselves a finding on a backup bucket, because they hand write access to every editor in the project.
 
 #### V162
 
 **No production SA holds delete on backups** · checklist `11.3#4` · scope: project · needs `jq`
 
 ```bash
-id=BACKUP_IDENTITY
-gcloud storage buckets get-iam-policy gs://BACKUP_BUCKET --format=json \
-  | jq -r --arg id "$id" '.bindings[]?
+gcloud asset search-all-iam-policies --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --format=json \
+  | jq -r '.[]? | .resource as $r | .policy.bindings[]?
     | select(.role | test("objectAdmin|objectUser|storage.admin|legacyBucketOwner|roles/owner|roles/editor"))
-    | .role as $r | .members[]
-    | if sub("^(serviceAccount|user|group):"; "") == $id then "BACKUP IDENTITY CAN DELETE BACKUPS: \(.) (\($r)) — objectCreator is the target"
-      else "DELETE ACCESS TO BACKUPS: \(.) (\($r))" end'
+    | "\($r | sub(".*/"; "")): \(.role) -> \(.members | join(" "))"'
 ```
 
-**Pass:** Empty output. Requires the BACKUP_IDENTITY prerequisite. Each line is a principal able to delete backups, including the backup identity itself.
+**Pass:** Every principal able to **delete** from each bucket in the project. For buckets holding backups, nothing should appear here — not even the backup identity, which needs `objectCreator` (write-only) rather than `objectAdmin`. An account that can write backups and also delete them is the account ransomware wants.
 
 #### V163
 
 **Bucket Lock applied to backup buckets** · checklist `11.3#5` · scope: project
 
 ```bash
-l=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(retentionPolicy.isLocked)") || exit 1
-if [ "$l" != "True" ]; then echo "NO BUCKET LOCK ON BACKUPS: gs://BACKUP_BUCKET"; fi
+gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --read-mask='name,versionedResources' --format=json \
+  | jq -r '.[] | .versionedResources[]?.resource
+    | "\(.name): \(if .retentionPolicy.retentionPeriod then "retention \(.retentionPolicy.retentionPeriod)s, locked=\(.retentionPolicy.isLocked // false)" else "no retention policy" end)"'
 ```
 
-**Pass:** Empty output. A line means the backup bucket has no locked retention policy.
+**Pass:** Every bucket with its retention policy and whether that policy is locked. For buckets holding backups, `no retention policy` or `locked=false` means the backups can still be deleted early — a lock is what makes retention survive a compromised administrator.
 
 #### V164
 
@@ -2768,13 +2746,12 @@ gcloud logging metrics list --project="$PROJECT_ID" --filter="name~backup" --for
 **Backup copy in a separate project** · checklist `11.4#1` · scope: project
 
 ```bash
-prod=PRODUCTION_PROJECTS
-num=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(projectNumber)") || exit 1
-proj=$(gcloud projects list --filter="projectNumber=$num" --format="value(projectId)") || exit 1
-if printf '%s' "$proj" | grep -Eq -- "${prod//,/|}"; then echo "BACKUP BUCKET IN A PRODUCTION PROJECT: gs://BACKUP_BUCKET is in $proj"; fi
+gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --read-mask='name,project,versionedResources' --format=json \
+  | jq -r '.[] | .project as $p | .versionedResources[]?.resource | "\($p) / \(.name)"'
 ```
 
-**Pass:** Empty output. Requires the PRODUCTION_PROJECTS prerequisite. A line means the backup bucket lives in a production project.
+**Pass:** Every bucket in this project, prefixed with the project holding it. If any of these are backups, confirm this project is not the one running the production workload they back up — a backup in the same project dies with it. Which projects are production differs per customer, so ask.
 
 #### V166
 
@@ -2782,47 +2759,40 @@ if printf '%s' "$proj" | grep -Eq -- "${prod//,/|}"; then echo "BACKUP BUCKET IN
 
 ```bash
 set -o pipefail
-prod=PRODUCTION_PROJECTS
-backup_project=BACKUP_PROJECT
-bparent=$(gcloud projects describe "$backup_project" --format="value(parent.type,parent.id)" | tr '\t' ' ') || exit 1
+mine=$(gcloud projects describe "$PROJECT_ID" --format="value(parent.type,parent.id)" | tr '\t' ' ') || exit 1
+echo "$PROJECT_ID is under $mine"
 gcloud projects list --format="value(projectId,parent.type,parent.id)" \
 | while IFS=$'\t' read -r p type pid; do
-    [ "$p" = "$backup_project" ] && continue
-    if printf '%s' "$p" | grep -Eq -- "${prod//,/|}" && [ "$type $pid" = "$bparent" ]; then
-      echo "BACKUP PROJECT SHARES A PARENT WITH PRODUCTION: $backup_project and $p under $bparent"
-    fi
+    [ "$p" = "$PROJECT_ID" ] && continue
+    [ "$type $pid" = "$mine" ] && echo "SHARES THIS PARENT: $p"
   done
 ```
 
-**Pass:** Empty output. Requires the PRODUCTION_PROJECTS prerequisite. A line means the backup project sits under the same folder as a production project.
+**Pass:** This project's parent folder, and every other project sharing it. If this project holds backups, confirm none of the projects listed underneath it are production — a folder-level policy or a compromised folder admin reaches all of them at once. Ask which projects are production.
 
 #### V167
 
 **No shared credential reaches both production and backups** · checklist `11.4#3` · scope: project · needs `jq`
 
 ```bash
-backup_project=BACKUP_PROJECT
-gcloud projects get-iam-policy "$backup_project" --format=json \
-  | jq -r '.bindings[]?.members[]? | select(test("prod|production"))'
+gcloud projects get-iam-policy "$PROJECT_ID" --format=json \
+  | jq -r '.bindings[]? | .role as $r | .members[]? | "\(.) (\($r))"' | sort -u
 ```
 
-**Pass:** Empty output.
+**Pass:** Every principal holding a role in this project. If this project holds backups, confirm none of these identities also reaches production — a credential that opens both is a single point of failure, and the one an attacker looks for after reaching production.
 
 #### V168
 
 **Copy held in a different region or multi-region** · checklist `11.4#4` · scope: project
 
 ```bash
-regions=PRODUCTION_REGIONS
-loc=$(gcloud storage buckets describe gs://BACKUP_BUCKET --raw --format="value(location)") || exit 1
-for r in ${regions//,/ }; do
-  if [ "$(printf '%s' "$r" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$loc" | tr '[:upper:]' '[:lower:]')" ]; then
-    echo "BACKUP COPY IN A PRODUCTION REGION: gs://BACKUP_BUCKET is in $loc"
-  fi
-done
+gcloud asset search-all-resources --scope=projects/$PROJECT_ID \
+  --asset-types=storage.googleapis.com/Bucket --read-mask='name,versionedResources' --format=json \
+  | jq -r '.[] | .versionedResources[]?.resource
+    | "\(.name): \(.location)"'
 ```
 
-**Pass:** Empty output. Requires the PRODUCTION_REGIONS prerequisite. A line means the backup bucket is in a production region.
+**Pass:** Every bucket with the location it lives in. For buckets holding backups, confirm the location differs from where the production data sits — a regional outage that takes the workload should not take its backups. Which regions carry production differs per customer, so ask.
 
 **Manual — GCP task, no CLI surface:**
 

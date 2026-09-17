@@ -220,3 +220,22 @@ retention policy, a CMEK default key, a Firestore backup schedule present. Bugs 
 - V58 fails every VPC without an egress deny rule, because the implied allow-all egress applies.
 - V97 reports a service account created in the last `DORMANCY_DAYS` as "no authentication recorded".
 - V161/V162 flag the `projectEditor:`/`projectOwner:` convenience members Cloud Storage adds by default.
+
+---
+
+## Revision 2026-09-17 — eleven prerequisites down to one
+
+Reviewed each prerequisite against what an auditor can actually be told at the start of an engagement. Nine were removed on the grounds that the value differs by team and by project inside a single organization, so one value for the whole estate would be wrong more often than right.
+
+| Value | Decision |
+|---|---|
+| `APPROVED_REGISTRIES` | **Kept.** Format documented — prefix match from the left of the image reference. |
+| `ALLOWED_LOCATIONS` | **Defaulted** to the continental US, including the `US` multi-region. Override replaces the list. |
+| `BACKUP_BUCKET`, `TFSTATE_BUCKET` | **Removed.** Assume neither is known, and assume there are several. |
+| `BACKUP_PROJECT`, `BACKUP_IDENTITY`, `PRODUCTION_PROJECTS`, `PRODUCTION_REGIONS`, `LOG_RETENTION_DAYS`, `SQL_BACKUP_RETENTION`, `DORMANCY_DAYS` | **Removed.** Each varies per project and team; the auditor asks. |
+
+The 13 dependent checks were not dropped. Each now runs without the value, gathers the same evidence, and reports **REVIEW** with a pass criterion naming what to ask the team. Auto-scored 109 → 96, REVIEW 79 → 92.
+
+Where a check previously targeted one named resource, it now enumerates the project's resources through Cloud Asset Inventory — one call per check rather than one per bucket, so it holds up on a large estate.
+
+**Open:** on a project with thousands of buckets the backup checks produce a long REVIEW block. Filtering to names matching `backup|archive|snapshot|dr` would shorten it at the cost of missing a backup bucket named something else. Not done.

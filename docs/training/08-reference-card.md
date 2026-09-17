@@ -49,7 +49,7 @@
 | No GCP surface | 12 |
 | Checklist requirements | 290 |
 | With a CLI check | 188 |
-| Auto-scored | 109 |
+| Auto-scored | 96 |
 | Manual | 102 |
 
 ---

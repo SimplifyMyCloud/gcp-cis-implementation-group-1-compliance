@@ -597,6 +597,9 @@ func substitute(cmd string, subs map[string]string) (string, []string, []string)
 		if v := os.Getenv(tok); v != "" {
 			return prefix + v
 		}
+		if v, ok := placeholderDefault[tok]; ok {
+			return prefix + v
+		}
 		if !seen[tok] {
 			seen[tok] = true
 			missing = append(missing, tok)
@@ -1378,14 +1381,22 @@ func loadConfig(path string) (map[string]string, error) {
 // discoverHint tells the operator what each placeholder is and, where useful,
 // the command that finds it. Prompting for "POLICY_ID" with no context is not
 // meaningfully better than skipping.
+// placeholderDefault supplies a value for placeholders whose answer is the
+// same for nearly every engagement. The operator can still override it in the
+// config; leaving it out no longer costs the check. A default here must be the
+// safe, common case — a wrong default produces confident findings, which is
+// worse than a SKIP.
+var placeholderDefault = map[string]string{
+	// Continental United States: the regions plus the "US" multi-region, which
+	// is what a bucket or dataset reports when it is not in a single region.
+	"ALLOWED_LOCATIONS": "us,US,us-central1,us-east1,us-east4,us-east5,us-south1,us-west1,us-west2,us-west3,us-west4",
+}
+
 var discoverHint = map[string]string{
 	"SECURITY_PROJECT":   "project carrying audit API quota",
 	"PROJECT_ID":         "main workload project — gcloud projects list",
 	"DOMAIN":             "Cloud Identity primary domain, e.g. example.com",
 	"LOG_BUCKET":         "GCS bucket holding exported audit logs",
-	"BACKUP_BUCKET":      "GCS bucket holding backups",
-	"TFSTATE_BUCKET":     "GCS bucket holding Terraform state",
-	"BACKUP_PROJECT":     "project holding isolated backups",
 	"INSTANCE":           "a Cloud SQL instance — gcloud sql instances list",
 	"CLUSTER":            "a GKE cluster — gcloud container clusters list",
 	"REGION":             "region for the resource being checked",
@@ -1399,14 +1410,8 @@ var discoverHint = map[string]string{
 
 	// Audit prerequisites: values that turn a judgement call into a PASS/FAIL.
 	// Comma-separated lists, no spaces.
-	"APPROVED_REGISTRIES":  "approved container registry prefixes, comma-separated — e.g. us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io",
-	"ALLOWED_LOCATIONS":    "locations data may live in, comma-separated — e.g. us,us-central1,us-west1",
-	"LOG_RETENTION_DAYS":   "minimum log bucket retention in days — e.g. 400",
-	"SQL_BACKUP_RETENTION": "minimum automated backups each Cloud SQL instance keeps — e.g. 30",
-	"DORMANCY_DAYS":        "days without authentication after which a service account is dormant — e.g. 90",
-	"BACKUP_IDENTITY":      "the one service account allowed to write backups — e.g. backup-writer@proj.iam.gserviceaccount.com",
-	"PRODUCTION_PROJECTS":  "regular expressions matching production project IDs, comma-separated — e.g. ^acme-prod-,^acme-pci-",
-	"PRODUCTION_REGIONS":   "regions production data lives in, comma-separated — e.g. us-west1,us-east1",
+	"APPROVED_REGISTRIES": "approved container registry prefixes, comma-separated — e.g. us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io",
+	"ALLOWED_LOCATIONS":   "locations data may live in, comma-separated — defaults to the continental US; set it only if data lives elsewhere",
 }
 
 func neededPlaceholders(checks []check) []string {
@@ -1439,12 +1444,16 @@ func writeConfigTemplate(path string, checks []check) error {
 	}
 
 	var b strings.Builder
-	b.WriteString("# audit-run placeholder values\n")
+	b.WriteString("# audit-run configuration\n")
 	b.WriteString("# Fill these in before the run so nothing is SKIPped.\n#\n")
-	b.WriteString("# If a resource genuinely does not exist in this organization, set it to\n")
+	b.WriteString("# These are policy answers, not facts about the estate — ask the customer\n")
+	b.WriteString("# rather than inferring them from what happens to be deployed. If a value\n")
+	b.WriteString("# genuinely does not exist, set it to\n")
 	b.WriteString("#   none\n")
-	b.WriteString("# and the checks that need it are recorded as FINDINGS, not skipped. A\n")
-	b.WriteString("# missing log bucket or backup bucket is non-compliance, not missing data.\n\n")
+	b.WriteString("# and the checks that need it are recorded as FINDINGS, not skipped.\n#\n")
+	b.WriteString("# ALLOWED_LOCATIONS is not listed unless you need it: it defaults to the\n")
+	b.WriteString("# continental United States. Set it only if data legitimately lives\n")
+	b.WriteString("# elsewhere, and give the full list — the default is replaced, not extended.\n\n")
 	for _, k := range keys {
 		fmt.Fprintf(&b, "# %s (%d check(s))\n%s=\n\n", discoverHint[k], count[k], k)
 	}

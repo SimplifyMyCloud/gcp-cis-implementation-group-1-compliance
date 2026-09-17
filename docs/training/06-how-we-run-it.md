@@ -88,7 +88,7 @@ That prints every check and how it is classified — `runnable`, `review`, `need
 | `N/A` | Product or API absent — not a failure |
 | `DENIED` | Missing permission — fix before trusting anything |
 
-**109 of 188 are auto-scored.** The other 79 are `REVIEW` with output saved verbatim.
+**96 of 188 are auto-scored.** The other 92 are `REVIEW` with output saved verbatim.
 
 That ratio is deliberate. No machine can tell you whether your org policy list matches your intended baseline. A confident wrong verdict is worse in an audit than an honest "you decide."
 
