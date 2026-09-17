@@ -1187,3 +1187,40 @@ normal. **Fix** — 30-day window. Verified: PASS (last entry the previous day).
 | Severity | wasted work — identical output once per project (105× on a large org), duplicated findings |
 
 **Fix** — `scope: org` (same class as BUG-023). Passes are now 71 org / 87 project checks.
+
+## BUG-046 — `excluded.txt` empty and "0 excluded" reported when EXCLUDE_PROJECTS is an alternation
+
+| | |
+|---|---|
+| Found | 2026-09-17, pre-customer validation pass |
+| Component | `run-audit.sh` |
+| Severity | **audit integrity** — the evidence says nothing was excluded while projects were excluded |
+
+**Error**
+
+```
+sed: 1: "s|$|  (matches EXCLUDE_ ...": bad flag in substitute command: 'e'
+  projects      1 audited, 0 excluded (EXCLUDE_PROJECTS ^(smc-|gen-|iq9-b|iq9-l|iq9-o|simplify))
+```
+
+**Cause** — the excluded list was annotated with `sed "s|$|  (matches EXCLUDE_PROJECTS $EXCLUDE)|"`. Any alternation
+regex contains `|`, which is the delimiter, so sed failed, `excluded.txt` was written empty, and `EXCLUDED_COUNT`
+counted its zero lines. Filtering itself was correct — only the record of it was lost. The default `^sys-` has no
+`|`, which is why this survived the 105-project customer-org run: the one case that works is the default.
+
+**Why it matters** — a report claiming every project was assessed, when 17 were skipped, is the kind of finding an
+auditor is supposed to catch rather than produce.
+
+**Fix** — annotate with `awk` reading the value from `ENVIRON`, which has no delimiter to collide with and does not
+interpret backslash escapes the way `awk -v` would.
+
+**Verification** — same run, after the fix:
+
+```
+  projects      1 audited, 17 excluded (EXCLUDE_PROJECTS ^(smc-|gen-|iq9-b|iq9-l|iq9-o|simplify))
+gen-lang-client-0690825234  (matches EXCLUDE_PROJECTS ^(smc-|gen-|iq9-b|iq9-l|iq9-o|simplify))
+```
+
+**Note for operators** — editing `run-audit.sh` while a run is in progress corrupts that run: bash reads a script
+lazily by byte offset, so changing its length makes the running shell lose its place (`unexpected EOF`). The pack is
+written but the rollup never runs. Found by doing exactly this during the validation pass.

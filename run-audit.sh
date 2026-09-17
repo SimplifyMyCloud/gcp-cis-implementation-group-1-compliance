@@ -129,7 +129,12 @@ if [[ ${#PROJECTS[@]} -gt 0 ]]; then
     cp "$RUN/.candidates" "$EVIDENCE/targets.txt"
   else
     grep -vE -- "$EXCLUDE" "$RUN/.candidates" > "$EVIDENCE/targets.txt" || true
-    grep -E -- "$EXCLUDE" "$RUN/.candidates" | sed "s|\$|  (matches EXCLUDE_PROJECTS $EXCLUDE)|" > "$EVIDENCE/excluded.txt" || true
+    # awk via ENVIRON, not sed: an alternation regex (^sys-|^tmp-) contains the
+    # sed delimiter, which breaks the substitution and silently leaves this file
+    # empty — so the run reports "0 excluded" having excluded everything.
+    grep -E -- "$EXCLUDE" "$RUN/.candidates" \
+      | EXCL="$EXCLUDE" awk '{print $0 "  (matches EXCLUDE_PROJECTS " ENVIRON["EXCL"] ")"}' \
+      > "$EVIDENCE/excluded.txt" || true
   fi
   rm -f "$RUN/.candidates"
 fi
