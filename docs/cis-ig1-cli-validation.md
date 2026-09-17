@@ -60,7 +60,39 @@ export PROJECT_ID="REPLACE_PROJECT_UNDER_AUDIT"
 
 Export it again for every project you move to. Leave it unset and the commands silently audit whatever `gcloud config` points at, which reports the wrong project's posture without erroring — it is the single easiest way to produce a clean, wrong audit.
 
-### 4. Impersonate the audit service account
+### 4. Create the run directory and config
+
+The service account already exists. What each run needs is somewhere to put its output and a config holding the eleven prerequisite values.
+
+```bash
+mkdir -p ./audit-state/projects
+```
+
+```bash
+go run audit-run.go -init-config ./audit-state/audit.env
+```
+
+That writes a template listing every value this run needs, each with an example and the number of checks it unblocks. Edit it:
+
+```bash
+open -e ./audit-state/audit.env      # or: vi ./audit-state/audit.env
+```
+
+Find the buckets it asks for:
+
+```bash
+gcloud projects list --format="value(projectId)" | while read -r p; do
+  gcloud storage buckets list --project="$p" --format="value(name)" 2>/dev/null | sed "s|^|$p / |"
+done
+```
+
+The rest — approved registries, allowed locations, retention thresholds, the backup identity, which projects and regions count as production — come from the customer rather than the estate. Ask; do not infer. A `PRODUCTION_PROJECTS` regex that matches nothing silently empties three checks.
+
+**If a resource does not exist, write `none`, not blank.** Blank gives SKIP and disappears from the report. `none` gives FAIL, which is the truth — a backup bucket nobody created is non-compliance, not missing data.
+
+`audit.env` names real buckets and projects, so keep it with the run it belongs to rather than in a shared location.
+
+### 5. Impersonate the audit service account
 
 ```bash
 gcloud config set auth/impersonate_service_account "$SA_EMAIL"
@@ -73,7 +105,7 @@ That must print `cis-ig1-auditor@…`. Every command afterwards carries a banner
 
 A fresh grant takes a minute or two to propagate. Until it does, commands fail with `Failed to impersonate`.
 
-### 5. Prove it took effect
+### 6. Prove it took effect
 
 Ask Google who the token belongs to. This reads; it changes nothing:
 
@@ -83,12 +115,12 @@ curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth prin
 
 Expected: `cis-ig1-auditor@…`. That is the identity every subsequent command runs as.
 
-- **Your own address** — impersonation is not active. Redo step 4 and check `gcloud config get-value auth/impersonate_service_account` prints the account.
+- **Your own address** — impersonation is not active. Redo step 5 and check `gcloud config get-value auth/impersonate_service_account` prints the account.
 - `Failed to impersonate` — the grant has not propagated. Wait a minute and retry.
 
 > **Do not test this by attempting to create something.** A write that fails proves nothing on its own — an operator without the permission is denied whether or not impersonation is active — and a write that *succeeds* means you have created a real resource in the customer's project and now have to remove it. An audit that promises to be read-only should not open with a write, and the attempt is recorded in their Admin Activity log either way.
 
-### 6. Placeholder values
+### 7. Placeholder values
 
 Eleven bare words in the commands below (`APPROVED_REGISTRIES`, `DORMANCY_DAYS`, `BACKUP_BUCKET` and the rest) are substituted by `audit-run.go` from its config file. Running by hand, **replace them yourself** — your shell will not, and an unsubstituted placeholder produces a command that runs and returns nothing, which reads like a pass.
 
