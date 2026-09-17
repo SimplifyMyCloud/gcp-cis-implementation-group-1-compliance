@@ -440,14 +440,14 @@ gcloud asset search-all-iam-policies \
 
 **Find buckets still on legacy per-object ACLs**
 
+One organization-wide call. A loop over projects and then over buckets is one API call per bucket, which does not finish on a large estate:
+
 ```
-gcloud projects list --format="value(projectId)" | while read p; do
-  gcloud storage buckets list --project="$p" --format="value(name)" 2>/dev/null | while read b; do
-    ubla=$(gcloud storage buckets describe "gs://$b" \
-      --format="value(uniform_bucket_level_access)" 2>/dev/null)
-    [ "$ubla" != "True" ] && echo "LEGACY ACLs: $p / $b"
-  done
-done
+gcloud asset search-all-resources --scope=organizations/$ORG_ID \
+  --asset-types=storage.googleapis.com/Bucket --read-mask='name,project,versionedResources' \
+  --format=json | jq -r '.[] | .project as $p | .versionedResources[]?.resource
+    | select(.iamConfiguration.uniformBucketLevelAccess.enabled != true)
+    | "LEGACY ACLs: \($p) / \(.name)"'
 ```
 
 **Find IAM grants to identities outside your tenant**

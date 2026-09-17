@@ -176,12 +176,12 @@ Lists are comma-separated with no spaces. Each value turns a judgement call into
 
 Blank produces `SKIP`, which reads as "we could not check." `none` produces `FAIL`, which is the truth: an organization with no backup bucket has not skipped safeguard 11.3, it has failed it. Blank values quietly turn non-compliance into missing data, and that is how a finding disappears from a report.
 
-To find them:
+Ask the customer for the names — none of these values is discoverable. To confirm one exists, query the organization once rather than every project in turn:
 
 ```bash
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud storage buckets list --project="$p" --format="value(name)" 2>/dev/null | sed "s|^|$p / |"
-done
+gcloud asset search-all-resources --scope=organizations/$ORG_ID \
+  --asset-types=storage.googleapis.com/Bucket \
+  --query='name:backup' --format="value(displayName,project)"
 ```
 
 - [ ] `./audit-state/audit.env` filled in

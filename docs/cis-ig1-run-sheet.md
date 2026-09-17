@@ -111,13 +111,15 @@ Empty means permissive-default. Record it as Step 0 in the checklist.
 go run audit-run.go -init-config ./audit-state/audit.env
 ```
 
-Find the buckets:
+Every value comes from the customer, not the estate. Ask for them, then confirm a bucket they named exists — one org-wide query, server-side filtered, same cost on ten buckets or a hundred thousand:
 
 ```bash
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud storage buckets list --project="$p" --format="value(name)" 2>/dev/null | sed "s|^|$p / |"
-done
+gcloud asset search-all-resources --scope=organizations/$ORG_ID \
+  --asset-types=storage.googleapis.com/Bucket \
+  --query='name:backup' --format="value(displayName,project)"
 ```
+
+`name:state` for the Terraform state bucket. Expect near-matches — this confirms an answer, it does not produce one. Do not list every bucket in every project: on a large organization that is one call per project and tens of thousands of rows.
 
 Edit `./audit-state/audit.env` — the eleven prerequisite values listed in [CLI validation](cis-ig1-cli-validation.md) (buckets, backup project, approved registries, allowed locations, retention and dormancy thresholds, backup identity, production projects and regions). It also carries `EXCLUDE_PROJECTS=^sys-`: projects matching it (Apps Script's `sys-…` projects by default) are never audited; `none` audits everything. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
 

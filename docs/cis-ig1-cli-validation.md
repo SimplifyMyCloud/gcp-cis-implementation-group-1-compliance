@@ -78,15 +78,19 @@ That writes a template listing every value this run needs, each with an example 
 open -e ./audit-state/audit.env      # or: vi ./audit-state/audit.env
 ```
 
-Find the buckets it asks for:
+**Every one of these values comes from the customer, not from the estate.** Which bucket holds backups, which registries are approved, how long logs must be kept, which projects are production — none of it is discoverable, and guessing it wrong fails quietly. A `PRODUCTION_PROJECTS` regex matching nothing empties three checks without saying so.
+
+Ask for the names. Then confirm what they gave you actually exists — one organization-wide query, server-side filtered, which costs the same on ten buckets or a hundred thousand:
 
 ```bash
-gcloud projects list --format="value(projectId)" | while read -r p; do
-  gcloud storage buckets list --project="$p" --format="value(name)" 2>/dev/null | sed "s|^|$p / |"
-done
+gcloud asset search-all-resources --scope=organizations/$ORG_ID \
+  --asset-types=storage.googleapis.com/Bucket \
+  --query='name:backup' --format="value(displayName,project)"
 ```
 
-The rest — approved registries, allowed locations, retention thresholds, the backup identity, which projects and regions count as production — come from the customer rather than the estate. Ask; do not infer. A `PRODUCTION_PROJECTS` regex that matches nothing silently empties three checks.
+Swap `name:backup` for `name:state` to confirm the Terraform state bucket. Expect several near-matches — a name alone never tells you which bucket is *the* backup, which is why this confirms an answer rather than producing one.
+
+Do not enumerate every bucket in every project to go looking. On a large organization that is one API call per project returning tens of thousands of rows, and it still leaves you picking a name out of a list you cannot verify.
 
 **If a resource does not exist, write `none`, not blank.** Blank gives SKIP and disappears from the report. `none` gives FAIL, which is the truth — a backup bucket nobody created is non-compliance, not missing data.
 
