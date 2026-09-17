@@ -19,10 +19,86 @@ Categories 1 and 2 total 188 numbered checks below. Categories 3 and 4 total 102
 
 ## Before you start
 
+Run these commands as the **audit service account**, never as yourself. An operator with Owner passes checks the audit identity would fail, so a manual pass run under your own credentials measures your access rather than the estate's posture.
+
+### 1. Open a shell
+
+**Cloud Shell** is the quickest — it already has `gcloud`, `jq` and Go, and it authenticates as the account you signed into the Console with. Open [shell.cloud.google.com](https://shell.cloud.google.com), or the terminal icon in the Console toolbar.
+
+Locally instead, confirm the tooling first:
+
+```bash
+gcloud version | head -1 && jq --version
+gcloud components list --filter="id:(alpha beta)" --format="value(id,state.name)"
 ```
-export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
-gcloud config set project SECURITY_PROJECT
+
+`alpha` and `beta` must not say `Not Installed` — seven checks need them (`gcloud components install alpha beta`).
+
+### 2. Authenticate as yourself
+
+```bash
+gcloud auth login
 ```
+
+Cloud Shell is already signed in, so this is only needed if the session has expired — which it does on a Workspace session timeout, mid-audit, with `Reauthentication failed. cannot prompt during non-interactive execution`.
+
+### 3. Set the variables the checks read
+
+```bash
+export ORG_ID="REPLACE_ORG_ID"                  # gcloud organizations list
+export AUDIT_PROJECT="REPLACE_AUDIT_PROJECT"    # the project the APIs are enabled in
+export SA_EMAIL="cis-ig1-auditor@${AUDIT_PROJECT}.iam.gserviceaccount.com"
+
+gcloud config set project "$AUDIT_PROJECT"
+```
+
+Project-scope checks additionally read `$PROJECT_ID` — **the project under audit, not the audit host**:
+
+```bash
+export PROJECT_ID="REPLACE_PROJECT_UNDER_AUDIT"
+```
+
+Export it again for every project you move to. Leave it unset and the commands silently audit whatever `gcloud config` points at, which reports the wrong project's posture without erroring — it is the single easiest way to produce a clean, wrong audit.
+
+### 4. Impersonate the audit service account
+
+```bash
+gcloud config set auth/impersonate_service_account "$SA_EMAIL"
+gcloud config get-value auth/impersonate_service_account
+```
+
+That must print `cis-ig1-auditor@…`. Every command afterwards carries a banner naming the impersonated account; that banner is expected, and the checks in this document strip it from their output.
+
+`gcloud auth list` still shows **your** address, and that is correct. Impersonation does not change the authenticated account — gcloud exchanges your credential for a short-lived service account token on each call, which is exactly why the audit log records both identities.
+
+A fresh grant takes a minute or two to propagate. Until it does, commands fail with `Failed to impersonate`.
+
+### 5. Prove it took effect
+
+```bash
+gcloud iam service-accounts create throwaway-check --project="$AUDIT_PROJECT"
+```
+
+The **correct** outcome is a failure naming the audit account: `[cis-ig1-auditor@…] does not have permission`.
+
+- `Failed to impersonate` — the grant has not propagated. Wait and retry.
+- **It succeeds** — impersonation is not active and you are running as yourself. Delete the account you just created and redo step 4.
+
+### 6. Placeholder values
+
+Eleven bare words in the commands below (`APPROVED_REGISTRIES`, `DORMANCY_DAYS`, `BACKUP_BUCKET` and the rest) are substituted by `audit-run.go` from its config file. Running by hand, **replace them yourself** — your shell will not, and an unsubstituted placeholder produces a command that runs and returns nothing, which reads like a pass.
+
+If a resource genuinely does not exist, that is a **finding**, not a check to skip.
+
+### When you are finished
+
+```bash
+gcloud config unset auth/impersonate_service_account
+```
+
+Leave it set and every later `gcloud` command in that shell still runs as the auditor — including ones you intend to run as yourself.
+
+---
 
 Checks discover their own resources. Where a safeguard concerns projects, Cloud SQL instances, GKE clusters, buckets, KMS keys or Cloud Routers, the command enumerates **every** one of them rather than sampling a single named resource — because **a requirement is met only when every resource meets it**. One non-compliant instance out of ten fails the check, and the output names which one.
 

@@ -1224,3 +1224,33 @@ gen-lang-client-0690825234  (matches EXCLUDE_PROJECTS ^(smc-|gen-|iq9-b|iq9-l|iq
 **Note for operators** — editing `run-audit.sh` while a run is in progress corrupts that run: bash reads a script
 lazily by byte offset, so changing its length makes the running shell lose its place (`unexpected EOF`). The pack is
 written but the rollup never runs. Found by doing exactly this during the validation pass.
+
+## BUG-047 — CLI validation doc had no setup: a manual audit ran as the operator, not the auditor
+
+| | |
+|---|---|
+| Found | 2026-09-17, user preparing a manual validation pass |
+| Component | `docs/cis-ig1-cli-validation.md` — "Before you start" |
+| Severity | **wrong result, undetectable** — an Owner passes checks the audit identity would fail |
+
+**Cause** — the section gave two lines (`export ORG_ID`, `gcloud config set project`) and nothing else. It never said
+to impersonate the audit service account, never exported `$PROJECT_ID`, and never mentioned Cloud Shell. Anyone
+working the document by hand — which is exactly how the automation gets validated — ran every command under their own
+credentials.
+
+**Why it matters** — three separate ways to a clean, wrong audit:
+
+- **Running as an Owner** passes checks the read-only auditor would fail, so the manual pass disagrees with the
+  automation and the automation looks broken.
+- **`$PROJECT_ID` unset** makes project-scope checks audit whatever `gcloud config` points at, without erroring — the
+  same defect as BUG-002, which cost 52 checks the wrong answer.
+- **Unsubstituted placeholders** (`APPROVED_REGISTRIES` and the other ten) produce commands that run and return
+  nothing, which reads like a pass.
+
+**Fix** — six numbered steps: open a shell (Cloud Shell or local, with the `alpha`/`beta` component check),
+authenticate, set `ORG_ID`/`AUDIT_PROJECT`/`SA_EMAIL`/`PROJECT_ID`, impersonate, **prove impersonation took effect**
+with the `service-accounts create` negative test, and substitute placeholders by hand. Plus `gcloud config unset
+auth/impersonate_service_account` when finished, so a later command in the same shell does not silently run as the
+auditor. Mirrors run sheet A1–A6 so the two documents cannot drift into disagreement.
+
+**Verification** — parser unaffected: 86 org / 103 project checks, unchanged.
