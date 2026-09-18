@@ -14,6 +14,7 @@
 #       04-compliance-score.txt
 #       remediation-plan.csv          import into the tracker
 #     evidence/                       the audit trail behind the report
+#       results/                      each pass's results and review decisions (read by --review)
 #       audit.env                     placeholder values used
 #       targets.txt                   projects audited
 #       run.log                       full console output
@@ -24,6 +25,12 @@
 #   ./run-audit.sh --config audit.env --project my-proj     # org + one project (repeatable)
 #   ./run-audit.sh --config audit.env --projects list.txt   # org + a list, one ID per line
 #   ./run-audit.sh --config audit.env --all                 # org + every ACTIVE project
+#   ./run-audit.sh --review scratch/runs/2026-09-14_12-58-20   # decide every REVIEW check
+#
+# A run leaves the REVIEW checks undecided, so its Completion is below 100%.
+# --review puts each one to the auditor, one at a time, for PASS or FAIL, then
+# rebuilds the reports and the remediation plan. Answers are saved as they are
+# given; quit at any point and run --review again to carry on.
 #
 # Runs as whatever gcloud is authenticated as — impersonate the audit service
 # account first. Written for bash 3.2 (the macOS default); no dependencies
@@ -33,6 +40,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage: ./run-audit.sh --config FILE [--project ID ...|--projects FILE|--all] [options]
+       ./run-audit.sh --review RUN_DIR
 
 Required
   --config FILE      Config values (APPROVED_REGISTRIES, ALLOWED_LOCATIONS, EXCLUDE_PROJECTS).
@@ -51,13 +59,19 @@ Options
   --no-org           Skip the organization pass (project passes only)
   -h, --help         This message
 
+Review
+  --review RUN_DIR   After a run: put each REVIEW check to you for PASS or FAIL,
+                     organization first, then each project. Saved as you go; q
+                     quits and --review again resumes. Rebuilds the reports and
+                     the remediation plan. Needs nothing else — no --config.
+
 Projects whose ID matches EXCLUDE_PROJECTS in the config are never audited
 (default ^sys-, the projects Apps Script creates; set EXCLUDE_PROJECTS=none to
 audit everything). They are listed in evidence/excluded.txt.
 USAGE
 }
 
-CONFIG="" ORG="${ORG_ID:-}" OUT="./scratch/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8
+CONFIG="" ORG="${ORG_ID:-}" OUT="./scratch/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8 REVIEW_DIR=""
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -70,12 +84,72 @@ while [[ $# -gt 0 ]]; do
     --no-org)   DO_ORG=false; shift ;;
     --skip)     SKIP="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
+    --review)   REVIEW_DIR="$2"; shift 2 ;;
     -h|--help)  usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
 die() { echo "run-audit: $*" >&2; exit 2; }
+
+# ---------------------------------------------------------------------------
+# --review: decide the REVIEW checks of a finished run. Nothing is re-run.
+# ---------------------------------------------------------------------------
+# rollup.go finds packs by the file name 01-automated-results.md, which the
+# report/ layout renames; this lays them back out in a scratch directory.
+rebuild_plan() {  # $1 run directory (absolute)
+  local run="$1" tmp f
+  tmp=$(mktemp -d)
+  if [[ -f "$run/report/02-organization/01-automated-results.md" ]]; then
+    mkdir -p "$tmp/org"; cp "$run/report/02-organization/01-automated-results.md" "$tmp/org/"
+  fi
+  for f in "$run"/report/03-projects/*.md; do
+    [[ -f "$f" ]] || continue
+    mkdir -p "$tmp/projects/$(basename "$f" .md)"
+    cp "$f" "$tmp/projects/$(basename "$f" .md)/01-automated-results.md"
+  done
+  go run rollup.go -in "$tmp" -out "$run/report/01-remediation-plan.md" -csv "$run/report/remediation-plan.csv"
+  rm -rf "$tmp"
+}
+
+report_for() {  # $1 run directory, $2 pass name — the report file a pass is filed as
+  if [[ "$2" == "organization" ]]; then echo "$1/report/02-organization/01-automated-results.md"
+  else echo "$1/report/03-projects/$2.md"; fi
+}
+
+if [[ -n "$REVIEW_DIR" ]]; then
+  [[ -d "$REVIEW_DIR/evidence/results" ]] || die "no saved results in $REVIEW_DIR/evidence/results — --review needs a run made by this version of run-audit.sh"
+  RUN=$(cd "$REVIEW_DIR" && pwd)
+  cd "$(dirname "$0")"
+  STATES=()
+  [[ -f "$RUN/evidence/results/organization.json" ]] && STATES+=("$RUN/evidence/results/organization.json")
+  for f in "$RUN"/evidence/results/*.json; do
+    [[ "$(basename "$f")" == "organization.json" ]] || STATES+=("$f")
+  done
+  STOPPED=false
+  for state in "${STATES[@]}"; do
+    name=$(basename "$state" .json)
+    rm -f "$state.quit"
+    go run audit-run.go -decide "$state" -md "$(report_for "$RUN" "$name")" \
+      || die "review of $name failed"
+    # audit-run leaves this marker when the auditor quits (q): stop the
+    # session here rather than moving on to the next pass.
+    if [[ -f "$state.quit" ]]; then rm -f "$state.quit"; STOPPED=true; break; fi
+  done
+  echo
+  echo "=== Remediation plan"
+  rebuild_plan "$RUN"
+  echo
+  echo "================================================================"
+  echo "CIS IG1 audit review  $(basename "$RUN")"
+  for state in "${STATES[@]}"; do
+    name=$(basename "$state" .json)
+    printf '  %-32s %s\n' "$name" "$(grep -m1 -o 'SCORE: [^*]*' "$(report_for "$RUN" "$name")" || echo 'SCORE: unknown')"
+  done
+  if $STOPPED; then echo "  stopped — run --review again to carry on"; fi
+  echo "================================================================"
+  exit 0
+fi
 [[ -n "$ORG" ]]    || die "no organization — pass --org or export ORG_ID"
 [[ "$ORG" =~ ^[0-9]+$ ]] || die "--org must be the numeric organization ID"
 [[ -n "$CONFIG" ]] || die "--config is required (create one: go run audit-run.go -init-config audit.env)"
@@ -160,13 +234,15 @@ STATUS_LINES=()
 BAD=0
 
 pass_summary() {  # $1 label, $2 pack file
-  local f="$2" status counts
+  local f="$2" status counts score
   if [[ ! -f "$f" ]]; then
     STATUS_LINES+=("$(printf '  %-32s NO PACK WRITTEN' "$1")"); BAD=$((BAD + 1)); return
   fi
   status=$(grep -m1 -o 'RUN STATUS: [^*]*' "$f" | sed 's/ *—.*//; s/ *$//')
   counts=$(awk -F'|' '/^\| (PASS|FAIL|REVIEW|N\/A|ERROR|DENIED) \|/ {gsub(/ /,"",$2); gsub(/ /,"",$3); printf "%s %s  ", $2, $3}' "$f")
+  score=$(grep -m1 -o 'SCORE: [^*]*' "$f" | sed 's/^SCORE: //; s/ *$//' || true)
   STATUS_LINES+=("$(printf '  %-32s %-32s %s' "$1" "$status" "$counts")")
+  [[ -n "$score" ]] && STATUS_LINES+=("$(printf '  %-32s %s' "" "$score")")
   case "$status" in *UNRELIABLE*|*DEGRADED*) BAD=$((BAD + 1)) ;; esac
 }
 
@@ -221,11 +297,17 @@ if [[ -d "$PACKS/org" ]]; then
   [[ -f "$PACKS/org/02-manual-cli.md" ]]     && mv "$PACKS/org/02-manual-cli.md"     "$REPORT/02-organization/02-manual-gcp-tasks.md"
   [[ -f "$PACKS/org/03-manual-process.md" ]] && mv "$PACKS/org/03-manual-process.md" "$REPORT/02-organization/03-manual-process.md"
   [[ -f "$PACKS/org/iam-inventory.txt" ]]    && mv "$PACKS/org/iam-inventory.txt"    "$EVIDENCE/iam-inventory.txt"
+  if [[ -f "$PACKS/org/results.json" ]]; then
+    mkdir -p "$EVIDENCE/results"; mv "$PACKS/org/results.json" "$EVIDENCE/results/organization.json"
+  fi
 fi
 if [[ -d "$PACKS/projects" ]]; then
   for d in "$PACKS"/projects/*/; do
     p=$(basename "$d")
     [[ -f "$d/01-automated-results.md" ]] && mv "$d/01-automated-results.md" "$REPORT/03-projects/$p.md"
+    if [[ -f "$d/results.json" ]]; then
+      mkdir -p "$EVIDENCE/results"; mv "$d/results.json" "$EVIDENCE/results/$p.json"
+    fi
   done
 fi
 rm -rf "$PACKS"
@@ -248,6 +330,10 @@ echo "  remediation plan  $FINDINGS distinct finding(s)"
 [[ ${#NOT_FOUND[@]} -gt 0 ]] && echo "  not found         ${NOT_FOUND[*]}"
 echo
 echo "Read:  $REPORT/"
+if grep -q 'REVIEW\*\* await the auditor' "$REPORT"/02-organization/01-automated-results.md "$REPORT"/03-projects/*.md 2>/dev/null; then
+  echo "Next:  ./run-audit.sh --review $RUN"
+  echo "       Completion stays below 100% until every REVIEW check is decided PASS or FAIL."
+fi
 echo "================================================================"
 
 [[ $BAD -eq 0 ]] || { echo "run-audit: $BAD pass(es) UNRELIABLE, DEGRADED or missing — re-run before using these results" >&2; exit 1; }

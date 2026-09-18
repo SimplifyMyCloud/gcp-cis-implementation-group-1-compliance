@@ -32,6 +32,12 @@ In one command — org pass, project passes, rollup and score, filed into `audit
 ./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --out ./audit-state/runs --projects projects.txt   # or --project ID / --all
 ```
 
+The run finishes with REVIEW checks undecided. Decide them, one at a time, then read the three numbers at the top of each report — Completion, Pass, Fail:
+
+```bash
+./run-audit.sh --review ./audit-state/runs/<date_time>
+```
+
 Or step by step:
 
 ```bash

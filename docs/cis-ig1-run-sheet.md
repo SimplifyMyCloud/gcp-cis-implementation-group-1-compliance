@@ -109,6 +109,12 @@ audit-state/runs/2026-09-14_12-58-20/
     audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
 ```
 
+Then decide every REVIEW check PASS or FAIL. Completion in each report reaches 100% when the last is decided:
+
+```bash
+./run-audit.sh --review ./audit-state/runs/<timestamp>
+```
+
 `--project ID` (repeatable) or `--all` instead of `--projects`. A check hanging? `--skip V96` leaves it out (reported as SKIP); `--parallel 1` runs checks one at a time so the stuck one is obvious. Every check also has a 3-minute timeout (`-timeout` on `audit-run.go`). Projects that don't exist or can't be seen are listed as `not found` and skipped. The summary at the end shows every pass's `RUN STATUS`.
 
 ## A8. Organization pass

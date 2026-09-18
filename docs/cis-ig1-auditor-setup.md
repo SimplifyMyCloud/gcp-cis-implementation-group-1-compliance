@@ -183,6 +183,12 @@ The CLI is ready. Run the audit with output pointed at `audit-state/runs`:
 
 Use `--project ID` (repeatable) or `--projects FILE` in place of `--all` to audit a subset. See [cis-ig1-scripted-audit.md](cis-ig1-scripted-audit.md) for the options.
 
+The run ends by printing a `--review` command. Run it to decide each REVIEW check PASS or FAIL. Completion reaches 100% when the last one is decided — see [the score and `--review`](../readme.md#the-score-and---review):
+
+```bash
+./run-audit.sh --review ./audit-state/runs/<timestamp>
+```
+
 Commit the results to your branch and push:
 
 ```bash

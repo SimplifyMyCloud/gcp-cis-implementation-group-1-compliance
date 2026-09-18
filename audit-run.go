@@ -31,6 +31,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -105,6 +106,10 @@ type result struct {
 	output   string
 	errText  string
 	duration time.Duration
+	// Set when an auditor decided a REVIEW check with -decide. v then holds
+	// the auditor's verdict; the machine's REVIEW is kept in the saved state.
+	reviewedBy string
+	reviewedAt string
 }
 
 var (
@@ -209,10 +214,16 @@ func main() {
 		project   = flag.String("project", "", "the project to audit, for -scope=project")
 		initCfg   = flag.String("init-config", "", "write a starter config listing every placeholder this run needs, then exit")
 		noPrompt  = flag.Bool("no-prompt", false, "never prompt; leave unresolved placeholders as SKIP (for CI)")
+		decide    = flag.String("decide", "", "review a finished pass: put each REVIEW check to the auditor for PASS or FAIL (reads a pack's results.json)")
+		decideMD  = flag.String("md", "", "with -decide: the report to rebuild (default: 01-automated-results.md beside the results.json)")
 	)
 	var sets multiFlag
 	flag.Var(&sets, "set", "placeholder substitution, repeatable (-set PROJECT_ID=foo)")
 	flag.Parse()
+
+	if *decide != "" {
+		os.Exit(runDecide(*decide, *decideMD))
+	}
 
 	subs := map[string]string{}
 	for _, kv := range sets {
@@ -1153,11 +1164,76 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	stamp := time.Now().Format("2006-01-02 15:04")
+	if runStamp == "" {
+		runStamp = time.Now().Format("2006-01-02 15:04")
+	}
+	stamp := runStamp
 	org := os.Getenv("ORG_ID")
-	target := auditTarget
 
 	// ---------- 01 automated ----------
+	if err := os.WriteFile(dir+"/01-automated-results.md", []byte(renderAutomated(rs)), 0o644); err != nil {
+		return err
+	}
+	// The machine-readable record behind that file: what -decide reads to walk
+	// the auditor through the REVIEW checks and rebuild the report afterwards.
+	if err := saveState(dir+"/results.json", newState(rs)); err != nil {
+		return err
+	}
+
+	// The manual worksheets are organization-level. Skip them on project runs.
+	if auditScope == "project" {
+		fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
+		fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks (+%d organization checks listed)\n", len(rs), len(otherPass))
+		fmt.Fprintf(os.Stderr, "  (manual worksheets are organization-level — see the org pack)\n")
+		return nil
+	}
+
+	// ---------- 02 manual CLI / GCP ----------
+	var b strings.Builder
+	var gcp, proc []manualItem
+	for _, m := range manual {
+		if m.gcpTask {
+			gcp = append(gcp, m)
+		} else {
+			proc = append(proc, m)
+		}
+	}
+
+	fmt.Fprintf(&b, "# 2. Manual — GCP Tasks\n\nOrganization `%s` · %s\n\n", org, stamp)
+	fmt.Fprintf(&b, "**%d requirements.** These concern GCP configuration but have no single-command CLI check: ", len(gcp))
+	b.WriteString("Admin Console settings, image build properties, or a test that has to be performed rather than queried.\n\n")
+	b.WriteString("Work them one at a time and record the result. Where a console is involved, note where you looked.\n\n---\n\n")
+	writeManualTable(&b, gcp)
+	if err := os.WriteFile(dir+"/02-manual-cli.md", []byte(b.String()), 0o644); err != nil {
+		return err
+	}
+
+	// ---------- 03 manual process ----------
+	var c strings.Builder
+	fmt.Fprintf(&c, "# 3. Manual — Process and Documentation\n\nOrganization `%s` · %s\n\n", org, stamp)
+	fmt.Fprintf(&c, "**%d requirements.** None concern infrastructure *state*, but every one concerns the GCP estate — ", len(proc))
+	c.WriteString("the data management process for GCP data, the audit log process for GCP logs. ")
+	c.WriteString("They are ours; they are satisfied by a written, owned, dated document rather than by configuration.\n\n")
+	c.WriteString("> The most common audit failure here is a missing **review date**, not a missing document. ")
+	c.WriteString("A process nobody has reviewed cannot be shown to be current.\n\n---\n\n")
+	writeManualTable(&c, proc)
+	if err := os.WriteFile(dir+"/03-manual-process.md", []byte(c.String()), 0o644); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
+	fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks (+%d project checks listed)\n", len(rs), len(otherPass))
+	fmt.Fprintf(os.Stderr, "  02-manual-cli.md          %d GCP tasks\n", len(gcp))
+	fmt.Fprintf(os.Stderr, "  03-manual-process.md      %d process requirements\n", len(proc))
+	return nil
+}
+
+// renderAutomated builds 01-automated-results.md. It is called once when the
+// pass runs, and again by -decide each time the auditor's decisions change.
+func renderAutomated(rs []result) string {
+	org := os.Getenv("ORG_ID")
+	target := auditTarget
+	stamp := runStamp
 	var a strings.Builder
 	t := tally(rs)
 	fmt.Fprintf(&a, "# 1. Automated Results\n\nOrganization `%s` · scope: **%s** · %s\n\n", org, target, stamp)
@@ -1194,6 +1270,7 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	default:
 		fmt.Fprintf(&a, "> **RUN STATUS: OK** — every check executed.\n\n")
 	}
+	writeScore(&a, rs)
 	fmt.Fprintf(&a, "| Verdict | Count | Meaning |\n|---|---|---|\n")
 	fmt.Fprintf(&a, "| PASS | %d | Compliant — tick the checklist |\n", t[vPass])
 	fmt.Fprintf(&a, "| FAIL | %d | A finding — output below |\n", t[vFail])
@@ -1283,7 +1360,14 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 		if r.criteria != "" {
 			fmt.Fprintf(&a, "**Pass if:** %s\n\n", r.criteria)
 		}
-		fmt.Fprintf(&a, "**Why %s:** %s\n\n", r.v.label(), why(r))
+		if r.reviewedBy != "" {
+			machine := r
+			machine.v = vReview
+			fmt.Fprintf(&a, "**Why %s:** decided by the auditor on review — %s, %s. The machine's verdict was REVIEW: %s\n\n",
+				r.v.label(), r.reviewedBy, r.reviewedAt, why(machine))
+		} else {
+			fmt.Fprintf(&a, "**Why %s:** %s\n\n", r.v.label(), why(r))
+		}
 		body := r.output
 		if body == "" {
 			body = "(no output)"
@@ -1296,56 +1380,7 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 			fmt.Fprintf(&a, "<details><summary>command</summary>\n\n```bash\n%s\n```\n\n</details>\n\n", r.command)
 		}
 	}
-	if err := os.WriteFile(dir+"/01-automated-results.md", []byte(a.String()), 0o644); err != nil {
-		return err
-	}
-
-	// The manual worksheets are organization-level. Skip them on project runs.
-	if auditScope == "project" {
-		fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
-		fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks (+%d organization checks listed)\n", len(rs), len(otherPass))
-		fmt.Fprintf(os.Stderr, "  (manual worksheets are organization-level — see the org pack)\n")
-		return nil
-	}
-
-	// ---------- 02 manual CLI / GCP ----------
-	var b strings.Builder
-	var gcp, proc []manualItem
-	for _, m := range manual {
-		if m.gcpTask {
-			gcp = append(gcp, m)
-		} else {
-			proc = append(proc, m)
-		}
-	}
-
-	fmt.Fprintf(&b, "# 2. Manual — GCP Tasks\n\nOrganization `%s` · %s\n\n", org, stamp)
-	fmt.Fprintf(&b, "**%d requirements.** These concern GCP configuration but have no single-command CLI check: ", len(gcp))
-	b.WriteString("Admin Console settings, image build properties, or a test that has to be performed rather than queried.\n\n")
-	b.WriteString("Work them one at a time and record the result. Where a console is involved, note where you looked.\n\n---\n\n")
-	writeManualTable(&b, gcp)
-	if err := os.WriteFile(dir+"/02-manual-cli.md", []byte(b.String()), 0o644); err != nil {
-		return err
-	}
-
-	// ---------- 03 manual process ----------
-	var c strings.Builder
-	fmt.Fprintf(&c, "# 3. Manual — Process and Documentation\n\nOrganization `%s` · %s\n\n", org, stamp)
-	fmt.Fprintf(&c, "**%d requirements.** None concern infrastructure *state*, but every one concerns the GCP estate — ", len(proc))
-	c.WriteString("the data management process for GCP data, the audit log process for GCP logs. ")
-	c.WriteString("They are ours; they are satisfied by a written, owned, dated document rather than by configuration.\n\n")
-	c.WriteString("> The most common audit failure here is a missing **review date**, not a missing document. ")
-	c.WriteString("A process nobody has reviewed cannot be shown to be current.\n\n---\n\n")
-	writeManualTable(&c, proc)
-	if err := os.WriteFile(dir+"/03-manual-process.md", []byte(c.String()), 0o644); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
-	fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks (+%d project checks listed)\n", len(rs), len(otherPass))
-	fmt.Fprintf(os.Stderr, "  02-manual-cli.md          %d GCP tasks\n", len(gcp))
-	fmt.Fprintf(os.Stderr, "  03-manual-process.md      %d process requirements\n", len(proc))
-	return nil
+	return a.String()
 }
 
 func writeManualTable(w *strings.Builder, items []manualItem) {
@@ -1607,4 +1642,395 @@ func promptForMissing(checks []check, subs map[string]string) []check {
 		checks[i].command, checks[i].missing, checks[i].absent = substitute(checks[i].rawCommand, subs)
 	}
 	return checks
+}
+
+// ---------------------------------------------------------------------------
+// Score and review
+// ---------------------------------------------------------------------------
+
+// runStamp is when the pass ran. A report rebuilt by -decide keeps it, so the
+// file still says when the evidence was gathered, not when it was judged.
+var runStamp string
+
+// scoreOf reduces a pass to the three numbers a project is reported on.
+//
+// Every check ends as pass, fail, or not yet final. N/A is a pass: the product
+// is not enabled, so there is nothing in it to fail. REVIEW is not final until
+// the auditor decides it, and SKIP, ERROR and DENIED are checks that did not
+// get an answer at all. Completion is the share that is final; it reaches
+// 100% only when every check is PASS or FAIL.
+type score struct {
+	total, pass, fail           int
+	passRan, passNA, passReview int
+	failRan, failReview         int
+	undecided, blocked          int
+}
+
+func scoreOf(rs []result) score {
+	var s score
+	s.total = len(rs)
+	for _, r := range rs {
+		switch r.v {
+		case vPass:
+			s.pass++
+			if r.reviewedBy != "" {
+				s.passReview++
+			} else {
+				s.passRan++
+			}
+		case vNA:
+			s.pass++
+			s.passNA++
+		case vFail:
+			s.fail++
+			if r.reviewedBy != "" {
+				s.failReview++
+			} else {
+				s.failRan++
+			}
+		case vReview:
+			s.undecided++
+		default:
+			s.blocked++
+		}
+	}
+	return s
+}
+
+// pct rounds down, so a pass that is one check short never reads as 100%.
+func pct(n, of int) int {
+	if of == 0 {
+		return 0
+	}
+	return n * 100 / of
+}
+
+// percents gives the three numbers. Completion and Pass round down — neither
+// may overstate — and Fail is the remainder of the completed share, so Pass +
+// Fail always equals Completion instead of drifting a point short.
+func (s score) percents() (completion, pass, fail int) {
+	completion = pct(s.pass+s.fail, s.total)
+	pass = pct(s.pass, s.total)
+	return completion, pass, completion - pass
+}
+
+func (s score) line() string {
+	c, p, f := s.percents()
+	return fmt.Sprintf("completion %d%% · pass %d%% · fail %d%%", c, p, f)
+}
+
+func writeScore(a *strings.Builder, rs []result) {
+	s := scoreOf(rs)
+	// run-audit.sh reads this line for its summary.
+	fmt.Fprintf(a, "> **SCORE: %s**\n\n", s.line())
+	a.WriteString("| | | |\n|---|---|---|\n")
+	done := fmt.Sprintf("%d of %d checks are final — PASS or FAIL.", s.pass+s.fail, s.total)
+	if s.undecided > 0 {
+		done += fmt.Sprintf(" **%d REVIEW** await the auditor: `./run-audit.sh --review <run directory>`.", s.undecided)
+	}
+	if s.blocked > 0 {
+		done += fmt.Sprintf(" **%d** did not run (SKIP, ERROR or DENIED) — fix and re-run.", s.blocked)
+	}
+	c, p, f := s.percents()
+	fmt.Fprintf(a, "| **Completion** | **%d%%** | %s |\n", c, done)
+	fmt.Fprintf(a, "| **Pass** | **%d%%** | %d checks: %d PASS, %d N/A (product not enabled, nothing to fail), %d judged PASS on review |\n",
+		p, s.pass, s.passRan, s.passNA, s.passReview)
+	fmt.Fprintf(a, "| **Fail** | **%d%%** | %d checks: %d FAIL, %d judged FAIL on review |\n\n",
+		f, s.fail, s.failRan, s.failReview)
+	a.WriteString("Percentages are of every check in this pass. Pass rounds down; Fail is the rest of the completed share, so Pass + Fail = Completion.\n\n")
+}
+
+// The saved state is everything the report is built from, so -decide can
+// rebuild it without re-running a single check. JSON from the standard
+// library, like everything else here.
+type savedCheck struct {
+	ID, Title, Ref, Safeguard, Scope, Command, Criteria, ByHand string
+	Num                                                         int
+	EmptyPass, Evidence, Skipped                                bool
+	Refs, Missing, Absent                                       []string
+}
+
+type savedResult struct {
+	savedCheck
+	Verdict string // the machine's verdict; never overwritten by a decision
+	Output  string
+	ErrText string
+}
+
+type decision struct {
+	Verdict string // PASS or FAIL
+	By      string
+	At      string
+}
+
+type runState struct {
+	Org, Target, Scope, Stamp string
+	Results                   []savedResult
+	OtherPass                 []savedCheck
+	Decisions                 map[string]decision
+}
+
+func toSaved(c check) savedCheck {
+	return savedCheck{ID: c.id, Title: c.title, Ref: c.ref, Safeguard: c.safeguard, Scope: c.scope,
+		Command: c.command, Criteria: c.criteria, ByHand: c.byHand, Num: c.num,
+		EmptyPass: c.emptyPass, Evidence: c.evidence, Skipped: c.skipped,
+		Refs: c.refs, Missing: c.missing, Absent: c.absent}
+}
+
+func fromSaved(c savedCheck) check {
+	return check{id: c.ID, title: c.Title, ref: c.Ref, safeguard: c.Safeguard, scope: c.Scope,
+		command: c.Command, criteria: c.Criteria, byHand: c.ByHand, num: c.Num,
+		emptyPass: c.EmptyPass, evidence: c.Evidence, skipped: c.Skipped,
+		refs: c.Refs, missing: c.Missing, absent: c.Absent}
+}
+
+func verdictFromLabel(l string) verdict {
+	for v := vPass; v <= vXref; v++ {
+		if v.label() == l {
+			return v
+		}
+	}
+	return vError
+}
+
+func newState(rs []result) runState {
+	st := runState{Org: os.Getenv("ORG_ID"), Target: auditTarget, Scope: auditScope, Stamp: runStamp,
+		Decisions: map[string]decision{}}
+	for _, r := range rs {
+		st.Results = append(st.Results, savedResult{savedCheck: toSaved(r.check),
+			Verdict: r.v.label(), Output: r.output, ErrText: r.errText})
+	}
+	for _, c := range otherPass {
+		st.OtherPass = append(st.OtherPass, toSaved(c))
+	}
+	return st
+}
+
+// saveState writes through a temporary file and a rename, so a session killed
+// mid-write leaves the previous state rather than half a file.
+func saveState(path string, st runState) error {
+	b, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func loadState(path string) (runState, error) {
+	var st runState
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return st, err
+	}
+	if err := json.Unmarshal(b, &st); err != nil {
+		return st, fmt.Errorf("%s: %v", path, err)
+	}
+	if st.Decisions == nil {
+		st.Decisions = map[string]decision{}
+	}
+	return st, nil
+}
+
+func isXref(c check) bool { return c.command == "" && c.byHand == "" && len(c.refs) > 0 }
+
+// applyDecisions turns the saved machine results plus the auditor's decisions
+// into the results the report shows. A decision only ever replaces a REVIEW.
+// Cross-references are re-derived from the decided checks they point at, so
+// deciding V37 also settles V41; a cross-reference left REVIEW after that —
+// one that needs a check from the other pass — is decided in its own right.
+func applyDecisions(st runState) []result {
+	var rs []result
+	for _, sr := range st.Results {
+		r := result{check: fromSaved(sr.savedCheck), v: verdictFromLabel(sr.Verdict),
+			output: sr.Output, errText: sr.ErrText}
+		if isXref(r.check) {
+			r.v, r.output, r.errText = vXref, "", ""
+		} else if d, ok := st.Decisions[r.id]; ok && r.v == vReview {
+			r.v, r.reviewedBy, r.reviewedAt = verdictFromLabel(d.Verdict), d.By, d.At
+		}
+		rs = append(rs, r)
+	}
+	resolveXrefs(rs)
+	for i := range rs {
+		if d, ok := st.Decisions[rs[i].id]; ok && isXref(rs[i].check) && rs[i].v == vReview {
+			rs[i].v, rs[i].reviewedBy, rs[i].reviewedAt = verdictFromLabel(d.Verdict), d.By, d.At
+		}
+	}
+	return rs
+}
+
+// nextUndecided returns the next REVIEW to put to the auditor: checks with a
+// command of their own first, in V order, then any cross-reference still
+// REVIEW once those are settled.
+func nextUndecided(rs []result, passed map[string]bool) *result {
+	for _, xref := range []bool{false, true} {
+		for i := range rs {
+			if rs[i].v == vReview && isXref(rs[i].check) == xref && !passed[rs[i].id] {
+				return &rs[i]
+			}
+		}
+	}
+	return nil
+}
+
+// auditorIdentity is the human making the call — the signed-in account, not
+// the service account being impersonated.
+func auditorIdentity() string {
+	if out, err := exec.Command("gcloud", "config", "get-value", "account").Output(); err == nil {
+		if a := strings.TrimSpace(string(out)); a != "" {
+			return a
+		}
+	}
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	return "unknown"
+}
+
+const reviewPreviewLines = 30
+
+// runDecide walks the auditor through every REVIEW check in a saved pass,
+// one at a time, waiting for PASS or FAIL. Each answer is saved the moment it
+// is given, so quitting — or a lapsed sign-in, or a closed laptop — loses
+// nothing; running it again resumes at the first undecided check.
+func runDecide(statePath, mdPath string) int {
+	st, err := loadState(statePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "audit-run: %v\n", err)
+		return 2
+	}
+	os.Setenv("ORG_ID", st.Org)
+	auditTarget, auditScope, runStamp = st.Target, st.Scope, st.Stamp
+	otherPass = nil
+	for _, c := range st.OtherPass {
+		otherPass = append(otherPass, fromSaved(c))
+	}
+	if mdPath == "" {
+		mdPath = filepath.Join(filepath.Dir(statePath), "01-automated-results.md")
+	}
+
+	who := auditorIdentity()
+	passed := map[string]bool{} // skipped for now, this session only
+	rs := applyDecisions(st)
+
+	fmt.Printf("\nReview — %s · %d undecided\n", st.Target, scoreOf(rs).undecided)
+	fmt.Printf("Decided by %s. Answers are saved as you go; q quits, and running this again resumes.\n", who)
+
+	for {
+		r := nextUndecided(rs, passed)
+		if r == nil {
+			break
+		}
+		fmt.Printf("\n%s\n", strings.Repeat("═", 78))
+		fmt.Printf("%s  REVIEW  %s  %s      [%d left]\n", r.id, r.ref, r.title, scoreOf(rs).undecided-len(passed))
+		fmt.Printf("Pass if: %s\n", r.criteria)
+		fmt.Printf("%s\n", strings.Repeat("─", 78))
+		body := r.output
+		if body == "" {
+			body = "(no output)"
+		}
+		lines := strings.Split(body, "\n")
+		if len(lines) > reviewPreviewLines {
+			fmt.Println(strings.Join(lines[:reviewPreviewLines], "\n"))
+			fmt.Printf("… %d more lines — v to view all\n", len(lines)-reviewPreviewLines)
+		} else {
+			fmt.Println(body)
+		}
+		if r.byHand != "" {
+			fmt.Printf("%s\nRun by hand:\n%s\n", strings.Repeat("─", 78), r.byHand)
+		}
+		fmt.Printf("%s\n", strings.Repeat("─", 78))
+
+		for answered := false; !answered; {
+			fmt.Print("[p]ass  [f]ail  [s]kip for now  [v]iew full output  [q]uit and save > ")
+			line, rerr := readAnswer()
+			choice := strings.ToLower(strings.TrimSpace(line))
+			if rerr != nil && choice == "" {
+				choice = "q" // end of input: stop cleanly rather than loop
+			}
+			switch choice {
+			case "p", "f":
+				v := "PASS"
+				if choice == "f" {
+					v = "FAIL"
+				}
+				st.Decisions[r.id] = decision{Verdict: v, By: who, At: time.Now().Format("2006-01-02 15:04")}
+				if err := saveState(statePath, st); err != nil {
+					fmt.Fprintf(os.Stderr, "audit-run: could not save the decision: %v\n", err)
+					return 2
+				}
+				rs = applyDecisions(st)
+				answered = true
+			case "s":
+				passed[r.id] = true
+				answered = true
+			case "v":
+				showFull(body)
+			case "q":
+				// A quit ends the whole session, not just this pass. The exit
+				// code can't say so — `go run` reports every non-zero exit as
+				// 1 — so leave a marker beside the state for run-audit.sh.
+				if rc := finishDecide(statePath, mdPath, rs); rc != 0 {
+					return rc
+				}
+				if err := os.WriteFile(statePath+".quit", nil, 0o644); err != nil {
+					fmt.Fprintf(os.Stderr, "audit-run: %v\n", err)
+					return 2
+				}
+				return 0
+			}
+		}
+	}
+	return finishDecide(statePath, mdPath, rs)
+}
+
+// readAnswer reads one line from stdin a byte at a time. A buffered reader
+// would read ahead past this line, taking answers that belong to the next
+// pass's review, which runs as a separate process on the same input.
+func readAnswer() (string, error) {
+	var b []byte
+	one := make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(one)
+		if n == 1 {
+			if one[0] == '\n' {
+				return string(b), nil
+			}
+			b = append(b, one[0])
+		}
+		if err != nil {
+			return string(b), err
+		}
+	}
+}
+
+// showFull pages long output through less where it exists, else prints it.
+func showFull(body string) {
+	if path, err := exec.LookPath("less"); err == nil {
+		cmd := exec.Command(path, "-R")
+		cmd.Stdin = strings.NewReader(body)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if cmd.Run() == nil {
+			return
+		}
+	}
+	fmt.Println(body)
+}
+
+func finishDecide(statePath, mdPath string, rs []result) int {
+	if err := os.WriteFile(mdPath, []byte(renderAutomated(rs)), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "audit-run: %v\n", err)
+		return 2
+	}
+	s := scoreOf(rs)
+	fmt.Printf("\n%s — %s\n", auditTarget, s.line())
+	if s.undecided > 0 {
+		fmt.Printf("%d REVIEW still undecided. Run the review again to continue.\n", s.undecided)
+	}
+	fmt.Printf("Report: %s\n", mdPath)
+	return 0
 }
