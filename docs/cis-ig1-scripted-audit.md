@@ -22,7 +22,7 @@ Five organization checks, one per permission family. Any `DENIED` is a missing g
 
 Created in [setup step 7](cis-ig1-auditor-setup.md#7-build-the-output-directory-and-config). One prerequisite value — `APPROVED_REGISTRIES`, the registry prefixes images may come from. `ALLOWED_LOCATIONS` defaults to the continental United States and only needs setting if data lives elsewhere. Everything else is discovered, or asked of a human at review time.
 
-**If one does not exist, write `none`, not blank.** Blank gives `SKIP` ("could not check"); `none` gives `FAIL`, which is the truth — no backup bucket is safeguard 11.3 failing.
+**If the customer has no approved-registry list, write `none`, not blank.** Blank gives SKIP and the two checks disappear from the report. `none` gives FAIL, which is the truth — with no list of approved sources, safeguard 2.3 is not met.
 
 ## Run
 
@@ -35,11 +35,11 @@ In one command — org pass, project passes, rollup and score, filed into `audit
 Or step by step:
 
 ```bash
-# Organization — 71 checks, once. Always first.
+# Organization — 86 checks, once. Always first.
 go run audit-run.go -scope=org -org="$ORG_ID" \
   -config ./audit-state/audit.env -pack ./audit-state/org
 
-# Project — 87 checks, once per project
+# Project — 103 checks, once per project
 gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt
 export PROJECT=<pick one>
 go run audit-run.go -scope=project -org="$ORG_ID" -project="$PROJECT" \

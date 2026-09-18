@@ -17,8 +17,8 @@ How to validate a GCP Organization against CIS IG1 using the documents and scrip
 
 ## Two passes, in this order
 
-1. **Organization** — 71 checks, run once. The posture every project inherits.
-2. **Project** — 87 checks, run **once per project**, targeted explicitly.
+1. **Organization** — 86 checks, run once. The posture every project inherits.
+2. **Project** — 103 checks, run **once per project**, targeted explicitly.
 
 The organization pass goes first because its findings explain the project results. Within a project pass, every resource of the relevant kind is checked, and one non-compliant resource fails the requirement.
 
@@ -144,20 +144,11 @@ Two values remain, because they are policy rather than anything queryable: `APPR
 
 Everything else the audit needs to know about your policy — which bucket holds backups, how long logs must be kept, what counts as a dormant service account, which projects are production — it asks a person instead. Those differ by team and by project even inside one organization, so a single value for the estate would be wrong more often than right. Those checks still run and still gather the evidence; they report **REVIEW**, and their output is what you take into that conversation.
 
-**If a value does not exist, write `none`, not blank.**
+**If the customer has no approved-registry list, write `none`, not blank.**
 
-Blank produces `SKIP`, which reads as "we could not check." `none` produces `FAIL`, which is the truth: an organization with no backup bucket has not skipped safeguard 11.3, it has failed it. Blank values quietly turn non-compliance into missing data, and that is how a finding disappears from a report.
+Blank produces `SKIP`, which reads as "we could not check." `none` produces `FAIL`, which is the truth: an organization with no list of approved software sources has not skipped safeguard 2.3, it has failed it. Blank values quietly turn non-compliance into missing data, and that is how a finding disappears from a report.
 
-Ask the customer for the names — none of these values is discoverable. To confirm one exists, query the organization once rather than every project in turn:
-
-```bash
-gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=storage.googleapis.com/Bucket \
-  --query='name:backup' --format="value(displayName,project)"
-```
-
-- [ ] `./audit-state/audit.env` filled in
-- [ ] Anything non-existent recorded as `none`, not left blank
+- [ ] `APPROVED_REGISTRIES` set in `./audit-state/audit.env` — or `none`, never blank
 
 ---
 
@@ -172,7 +163,7 @@ go run audit-run.go -scope=org -org="$ORG_ID" \
   2>&1 | tee ./audit-state/org-run.log
 ```
 
-71 checks. It exits non-zero whenever a check FAILs — that is findings, not a broken run. Read `01-automated-results.md` before starting the project passes — an org-level `DENIED` means the project passes will be unreliable too.
+86 checks. It exits non-zero whenever a check FAILs — that is findings, not a broken run. Read `01-automated-results.md` before starting the project passes — an org-level `DENIED` means the project passes will be unreliable too.
 
 - [ ] Organization pack produced
 - [ ] No `DENIED` remaining
@@ -201,7 +192,7 @@ Pick one from that list and export it. Everything below reads `$PROJECT`, so thi
 export PROJECT=<paste-a-projectId-from-the-list-above>
 ```
 
-Confirm it resolves before running 87 checks against a typo:
+Confirm it resolves before running 103 checks against a typo:
 
 ```bash
 gcloud projects describe "$PROJECT" --format="value(projectId,name,lifecycleState)"
@@ -218,7 +209,7 @@ go run audit-run.go -scope=project -org="$ORG_ID" -project="$PROJECT" \
   2>&1 | tee "./audit-state/projects/$PROJECT.log"
 ```
 
-87 checks. Repeat from **Set the project** for each entry in `projects.txt`.
+103 checks. Repeat from **Set the project** for each entry in `projects.txt`.
 
 To see which projects you have already covered:
 

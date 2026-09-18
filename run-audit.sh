@@ -35,7 +35,7 @@ usage() {
 Usage: ./run-audit.sh --config FILE [--project ID ...|--projects FILE|--all] [options]
 
 Required
-  --config FILE      Placeholder values (BACKUP_BUCKET, TFSTATE_BUCKET, BACKUP_PROJECT).
+  --config FILE      Config values (APPROVED_REGISTRIES, ALLOWED_LOCATIONS, EXCLUDE_PROJECTS).
                      Create one with: go run audit-run.go -init-config FILE
 
 Projects (default: organization pass only)

@@ -18,7 +18,7 @@ export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
 go run audit-run.go -scope=org -org=$ORG_ID -pack ./audit-state/org
 ```
 
-71 checks. Results stream as they land:
+86 checks. Results stream as they land:
 
 ```
 Running 86 checks against organization 123456789012
@@ -40,13 +40,13 @@ go run audit-run.go -scope=project -org=$ORG_ID \
   -project=$PROJECT -pack ./audit-state/projects/$PROJECT
 ```
 
-87 checks, against that project only. Repeat per project.
+103 checks, against that project only. Repeat per project.
 
 ---
 
 ## Running it live
 
-For a demo you do not want to wait for 71 checks. Pick four that hit different subsystems and finish in seconds:
+For a demo you do not want to wait for 86 checks. Pick four that hit different subsystems and finish in seconds:
 
 ```bash
 go run audit-run.go -scope=org -org=$ORG_ID \
@@ -66,7 +66,7 @@ To show the shape without touching the org at all:
 go run audit-run.go -list | head -20
 ```
 
-That prints every check and how it is classified — `runnable`, `review`, `needs BACKUP_BUCKET`, `xref`, `by-hand` — and runs nothing.
+That prints every check and how it is classified — `runnable`, `review`, `needs APPROVED_REGISTRIES`, `xref`, `by-hand` — and runs nothing.
 
 ---
 

@@ -169,7 +169,7 @@ Locally, use `vi ./audit-state/audit.env` or your editor.
 
 | Value | Set it to |
 |---|---|
-| `APPROVED_REGISTRIES` | The registry prefixes images may come from, comma-separated with no spaces. **Ask the customer.** It is policy, not what happens to be in use. Example: `us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io` |
+| `APPROVED_REGISTRIES` | The registry prefixes images may come from, comma-separated with no spaces. **Ask the customer.** It is policy, not what happens to be in use. Example: `us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io`. If they have no list, write `none`, not blank: blank skips the two checks, `none` fails them, which is the truth. |
 | `ALLOWED_LOCATIONS` | Leave unset. It defaults to the continental United States. Set it only for data that legitimately lives elsewhere, and give the whole list, because the value replaces the default rather than extending it. |
 | `EXCLUDE_PROJECTS` | Leave at `^sys-`, which skips the projects Apps Script creates. |
 

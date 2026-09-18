@@ -1295,3 +1295,34 @@ substitute a write test.
 ```
 cis-ig1-auditor@simplifymycloud-dev.iam.gserviceaccount.com
 ```
+
+---
+
+## BUG-049 — docs still described the eleven-prerequisite build and the pre-`9f62275` pass sizes
+
+| | |
+|---|---|
+| Found | 2026-09-18, repo-wide review of setup instructions |
+| Component | `docs/cis-ig1-audit-runbook.md`, `docs/cis-ig1-cli-validation.md`, `docs/cis-ig1-scripted-audit.md`, `docs/training/06-how-we-run-it.md`, `docs/cis-ig1-run-sheet.md`, `run-audit.sh --help` |
+| Severity | **wrong instructions** — an auditor following them fills in values the tool no longer reads |
+
+**Cause** — two check-set changes landed in code without every document following:
+
+1. **Pass sizes.** `9f62275` moved V6/V113/V127 to org scope and later rewrites added checks; the passes are
+   86 org / 103 project, but eleven places still said 71 / 87.
+2. **Prerequisites.** `8dea1a5` cut `audit.env` from eleven values to one. The run sheet still told the auditor to
+   fill in "the eleven prerequisite values" and confirm a backup bucket by name; three docs explained the `none` rule
+   with a backup bucket, which no check reads any more; `run-audit.sh --help` listed `BACKUP_BUCKET`,
+   `TFSTATE_BUCKET`, `BACKUP_PROJECT` as the config; training/06 showed `needs BACKUP_BUCKET` as a `-list` example.
+   The run sheet's closing checklist also still said "A6 write attempt denied" — the proof BUG-048 replaced.
+
+**Fix** — counts corrected everywhere. The `none` rule is still right, and `audit-run.go` still implements it
+(`absent` → FAIL, "a resource that doesn't exist can't meet the requirement"); it now applies to the one value left,
+so every doc explains it with `APPROVED_REGISTRIES`: no approved-registry list means safeguard 2.3 is not met, and
+`none` says so where blank would SKIP both checks out of the report. The bucket-confirmation query is removed. The
+run sheet's config step and checklist went in `c70b4e7`, where the setup steps were replaced with links to
+`docs/cis-ig1-auditor-setup.md`.
+
+**Verification** — `git grep` for `eleven`, `71 checks`, `87 checks`, `BACKUP_BUCKET`, `TFSTATE_BUCKET`,
+`BACKUP_PROJECT` and `name:backup` outside `docs/testing/` and `docs/design/` returns only two unrelated uses of
+"eleven" (overview, benchmark overlap); `bash -n run-audit.sh` clean and `--help` shows the new line.

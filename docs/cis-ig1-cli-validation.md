@@ -84,7 +84,7 @@ open -e ./audit-state/audit.env      # or: vi ./audit-state/audit.env
 
 **`ALLOWED_LOCATIONS` already defaults to the continental United States.** Leave it alone unless data legitimately lives elsewhere, in which case set it to the full list — the default is not additive, so an EU customer writes `europe-west1,eu,EU` rather than appending to it.
 
-**If a resource does not exist, write `none`, not blank.** Blank gives SKIP and disappears from the report. `none` gives FAIL, which is the truth — a backup bucket nobody created is non-compliance, not missing data.
+**If the customer has no approved-registry list, write `none`, not blank.** Blank gives SKIP and the two checks disappear from the report. `none` gives FAIL, which is the truth — with no list of approved sources, safeguard 2.3 is not met.
 
 `audit.env` names real buckets and projects, so keep it with the run it belongs to rather than in a shared location.
 
@@ -140,8 +140,8 @@ Checks are tagged **`scope: org`** or **`scope: project`**, and they run as two 
 
 | Pass | Checks | Command |
 |---|---|---|
-| **Organization** | 71 | `go run audit-run.go -scope=org` |
-| **Project** | 87 | `go run audit-run.go -scope=project -project=PROJECT_ID` — **once per project** |
+| **Organization** | 86 | `go run audit-run.go -scope=org` |
+| **Project** | 103 | `go run audit-run.go -scope=project -project=PROJECT_ID` — **once per project** |
 
 Run the organization pass first. It establishes the posture every project inherits, and several of its findings explain project-level results — a missing org policy constraint is why fifty projects each have a default network.
 
