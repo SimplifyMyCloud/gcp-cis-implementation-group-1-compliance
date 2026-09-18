@@ -19,6 +19,8 @@ Categories 1 and 2 total 188 numbered checks below. Categories 3 and 4 total 102
 
 ## Before you start
 
+Setting up a shell for a scripted run, including a reusable Cloud Shell setup, is in [cis-ig1-auditor-setup.md](cis-ig1-auditor-setup.md). The steps below are what a manual pass needs.
+
 Run these commands as the **audit service account**, never as yourself. An operator with Owner passes checks the audit identity would fail, so a manual pass run under your own credentials measures your access rather than the estate's posture.
 
 ### 1. Open a shell

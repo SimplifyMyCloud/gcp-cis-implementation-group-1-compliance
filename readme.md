@@ -6,6 +6,7 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 
 | | |
 |---|---|
+| [`docs/cis-ig1-auditor-setup.md`](docs/cis-ig1-auditor-setup.md) | **First.** Sign in, branch, impersonate, output directory; one-time Cloud Shell setup. |
 | [`docs/cis-ig1-run-sheet.md`](docs/cis-ig1-run-sheet.md) | **At the terminal.** Flat copy-paste commands, org then per project. |
 | [`docs/cis-ig1-audit-runbook.md`](docs/cis-ig1-audit-runbook.md) | The same, with context and reasoning. |
 | [`docs/cis-ig1-scripted-audit.md`](docs/cis-ig1-scripted-audit.md) | Just the terminal work. |
