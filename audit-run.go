@@ -273,6 +273,8 @@ func main() {
 		for _, c := range checks {
 			if inPass(c, "org", checks) {
 				f = append(f, c)
+			} else {
+				otherPass = append(otherPass, c)
 			}
 		}
 		checks = f
@@ -303,6 +305,8 @@ func main() {
 		for _, c := range checks {
 			if inPass(c, "project", checks) {
 				f = append(f, c)
+			} else {
+				otherPass = append(otherPass, c)
 			}
 		}
 		checks = f
@@ -1118,6 +1122,33 @@ var auditTarget = "organization"
 // they are organization-level.
 var auditScope = "org"
 
+// otherPass holds the checks that belong to the other pass. They are not run,
+// but the pack lists them in V-number order alongside the checks that were, so
+// a report accounts for every check from V1 to the last — a reviewer reporting
+// on one project sees the organization checks it depends on, and where to find
+// their results, rather than a numbering with gaps.
+var otherPass []check
+
+// otherPassLabel is what an otherPass check shows in place of a verdict: the
+// name of the pass it belongs to. Deliberately not a verdict — rollup.go and
+// run-audit.sh count only verdicts, so these rows never become findings.
+func otherPassLabel() string {
+	if auditScope == "project" {
+		return "ORG"
+	}
+	return "PROJECT"
+}
+
+// otherPassWhere says where an otherPass check's result lives.
+func otherPassWhere() string {
+	if auditScope == "project" {
+		return "Organization-scope check — it runs once, in the organization pass, not per project. " +
+			"Its result is in the organization report (`report/02-organization/01-automated-results.md` in a `run-audit.sh` run)."
+	}
+	return "Project-scope check — it runs once per project, in the project pass. " +
+		"Its results are in each project's report (`report/03-projects/<project-id>.md` in a `run-audit.sh` run)."
+}
+
 func writePack(dir string, rs []result, manual []manualItem) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -1130,7 +1161,16 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	var a strings.Builder
 	t := tally(rs)
 	fmt.Fprintf(&a, "# 1. Automated Results\n\nOrganization `%s` · scope: **%s** · %s\n\n", org, target, stamp)
-	fmt.Fprintf(&a, "%d checks run by `audit-run.go`.\n\n", len(rs))
+	fmt.Fprintf(&a, "%d checks run by `audit-run.go`.", len(rs))
+	if len(otherPass) > 0 {
+		pass := "organization"
+		if auditScope == "org" {
+			pass = "project"
+		}
+		fmt.Fprintf(&a, " The other %d belong to the %s pass: they are listed in order below as **%s**, "+
+			"not run here and not counted in the verdicts.", len(otherPass), pass, otherPassLabel())
+	}
+	a.WriteString("\n\n")
 
 	// A run that mostly errored produces a pack full of ERROR verdicts that
 	// looks superficially like a set of findings. State the run's health up
@@ -1163,9 +1203,29 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	fmt.Fprintf(&a, "| DENIED | %d | Missing permission |\n", t[vDenied])
 	fmt.Fprintf(&a, "| ERROR | %d | Command failed |\n\n", t[vError])
 
+	// Every check in V-number order: this pass's results interleaved with the
+	// other pass's checks, so the numbering has no gaps.
+	type entry struct {
+		r   *result
+		c   check
+		ran bool
+	}
+	var all []entry
+	for i := range rs {
+		all = append(all, entry{r: &rs[i], c: rs[i].check, ran: true})
+	}
+	for _, c := range otherPass {
+		all = append(all, entry{c: c})
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].c.num < all[j].c.num })
+
 	a.WriteString("## Results\n\n| Check | Requirement | Verdict | Title |\n|---|---|---|---|\n")
-	for _, r := range rs {
-		fmt.Fprintf(&a, "| %s | `%s` | **%s** | %s |\n", r.id, r.ref, r.v.label(), r.title)
+	for _, e := range all {
+		label := otherPassLabel()
+		if e.ran {
+			label = e.r.v.label()
+		}
+		fmt.Fprintf(&a, "| %s | `%s` | **%s** | %s |\n", e.c.id, e.c.ref, label, e.c.title)
 	}
 	a.WriteString("\n")
 
@@ -1193,8 +1253,31 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	// Every check, in V-number order, with its verdict and the reason for it,
 	// so the pack reads as the evidence record rather than a list of failures.
 	// Nothing here may look like a Results table row: rollup.go parses those.
-	a.WriteString("## Detail\n\nEvery check in V-number order: its verdict, the pass criterion, why it got that verdict, and the output.\n\n")
-	for _, r := range rs {
+	a.WriteString("## Detail\n\nEvery check in V-number order: its verdict, the pass criterion, why it got that verdict, and the output. ")
+	if len(otherPass) > 0 {
+		fmt.Fprintf(&a, "Checks marked **%s** belong to the other pass: they show what would be checked and where the result is.", otherPassLabel())
+	}
+	a.WriteString("\n\n")
+	for _, e := range all {
+		if !e.ran {
+			c := e.c
+			fmt.Fprintf(&a, "### %s — %s\n\n", c.id, c.title)
+			fmt.Fprintf(&a, "**%s** · `%s`\n\n", otherPassLabel(), c.ref)
+			if c.criteria != "" {
+				fmt.Fprintf(&a, "**Pass if:** %s\n\n", c.criteria)
+			}
+			fmt.Fprintf(&a, "**Why %s:** %s\n\n", otherPassLabel(), otherPassWhere())
+			switch {
+			case c.byHand != "":
+				fmt.Fprintf(&a, "<details><summary>command (run by hand)</summary>\n\n```bash\n%s\n```\n\n</details>\n\n", c.byHand)
+			case c.command != "":
+				fmt.Fprintf(&a, "<details><summary>command</summary>\n\n```bash\n%s\n```\n\n</details>\n\n", c.command)
+			case len(c.refs) > 0:
+				fmt.Fprintf(&a, "Cross-reference — takes its result from %s.\n\n", strings.Join(c.refs, ", "))
+			}
+			continue
+		}
+		r := *e.r
 		fmt.Fprintf(&a, "### %s — %s\n\n", r.id, r.title)
 		fmt.Fprintf(&a, "**%s** · `%s`\n\n", r.v.label(), r.ref)
 		if r.criteria != "" {
@@ -1220,7 +1303,7 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	// The manual worksheets are organization-level. Skip them on project runs.
 	if auditScope == "project" {
 		fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
-		fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks\n", len(rs))
+		fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks (+%d organization checks listed)\n", len(rs), len(otherPass))
 		fmt.Fprintf(os.Stderr, "  (manual worksheets are organization-level — see the org pack)\n")
 		return nil
 	}
@@ -1259,7 +1342,7 @@ func writePack(dir string, rs []result, manual []manualItem) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "\naudit pack written to %s/\n", dir)
-	fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks\n", len(rs))
+	fmt.Fprintf(os.Stderr, "  01-automated-results.md   %d checks (+%d project checks listed)\n", len(rs), len(otherPass))
 	fmt.Fprintf(os.Stderr, "  02-manual-cli.md          %d GCP tasks\n", len(gcp))
 	fmt.Fprintf(os.Stderr, "  03-manual-process.md      %d process requirements\n", len(proc))
 	return nil

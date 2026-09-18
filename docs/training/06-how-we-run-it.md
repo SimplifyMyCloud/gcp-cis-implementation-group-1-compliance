@@ -74,7 +74,7 @@ That prints every check and how it is classified — `runnable`, `review`, `need
 
 | File | Contents |
 |---|---|
-| `01-automated-results.md` | Every check, as one table, with findings and their output |
+| `01-automated-results.md` | All 188 checks in V-number order, with findings and their output. Checks from the other pass are marked `ORG` or `PROJECT`, with where their result is |
 | `02-manual-cli.md` | 30 GCP tasks with no CLI check — Admin Console, image build, tests to perform |
 | `03-manual-process.md` | 72 process requirements — **still ours**, just written rather than configured |
 

@@ -54,6 +54,8 @@ Within a project, every resource of the relevant kind is checked. One non-compli
 
 Each pack is three files: `01-automated-results.md` (the results table, then a **Detail** block for every check in V-number order — verdict, pass criterion, why it got that verdict, output, and the command), `02-manual-cli.md` (30 console tasks), `03-manual-process.md` (72 process requirements). Project packs have only the first.
 
+The results file lists **all 188 checks, V1 to V188**, whichever pass it came from. Checks that belong to the other pass are marked **ORG** in a project report and **PROJECT** in the organization report: not run there, not counted in the verdicts, but shown with their pass criterion, their command, and where their result is. A project report therefore accounts for every check without a gap in the numbering.
+
 | Verdict | Meaning |
 |---|---|
 | `PASS` | Compliant |
