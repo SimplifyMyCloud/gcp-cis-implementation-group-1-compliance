@@ -63,7 +63,7 @@ eval "$(terraform output -raw impersonate_command)"
 gcloud config get-value auth/impersonate_service_account
 ```
 
-That must print `cis-ig1-auditor@…`.
+That must print `cis-ig1-auditor@…`. That confirms the service account works. To set up a shell for the audit itself — branch, token check, output directory, config, and the reusable Cloud Shell setup — follow [auditor setup](../docs/cis-ig1-auditor-setup.md).
 
 **`gcloud auth list` will still show your own address, and that is correct.** Impersonation does not change the authenticated account — you stay signed in as yourself, and gcloud exchanges that credential for a short-lived service account token on every call. The active account never changes, which is exactly why the audit log records both identities.
 

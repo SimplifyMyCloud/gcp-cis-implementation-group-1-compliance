@@ -36,7 +36,7 @@ eval "$(terraform output -raw impersonate_command)"
 gcloud config get-value auth/impersonate_service_account   # must show the SA
 ```
 
-Run the audit, then:
+To set up a shell for the audit itself, follow [auditor setup](../../docs/cis-ig1-auditor-setup.md). Run the audit, then:
 
 ```bash
 gcloud config unset auth/impersonate_service_account   # BEFORE destroy

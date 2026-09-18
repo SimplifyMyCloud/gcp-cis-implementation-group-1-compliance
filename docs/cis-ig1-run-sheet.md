@@ -8,29 +8,18 @@ Flat command list. Paste each block in order. Context and reasoning live in the 
 
 # Part A — Organization
 
-## A1. Set variables
+## A1. Set up your shell
+
+Follow [auditor setup](cis-ig1-auditor-setup.md) **steps 1–4**: open the shell and check tools, sign in, clone the repository onto your branch, set `ORG_ID`, `AUDIT_PROJECT` and `SA_EMAIL`.
+
+With the [Cloud Shell setup](cis-ig1-auditor-setup.md#part-2--cloud-shell-one-time-setup) done and the service account already in place, `audit-on` replaces the sign-in, variables and impersonation in A1 and A4. You still need setup step 7 on the first run of an engagement, to create `audit-state/` and `audit.env`.
+
+## A2. Snapshot enabled APIs, then enable
+
+Once per engagement, as yourself.
 
 ```bash
-export ORG_ID="REPLACE_ORG_ID"
-export AUDIT_PROJECT="REPLACE_AUDIT_PROJECT"
-export SA_EMAIL="cis-ig1-auditor@${AUDIT_PROJECT}.iam.gserviceaccount.com"
-
-mkdir -p ./audit-state/projects
-echo "org=$ORG_ID  project=$AUDIT_PROJECT"
-```
-
-## A2. Check tools
-
-```bash
-go version && jq --version && gcloud version | head -1
-gcloud components list --filter="id:(alpha beta)" --format="value(id,state.name)"
-```
-
-`alpha` and `beta` must not say `Not Installed` — 7 checks use them. Install with `gcloud components install alpha beta`.
-
-## A3. Snapshot enabled APIs, then enable
-
-```bash
+mkdir -p ./audit-state
 gcloud services list --enabled --project="$AUDIT_PROJECT" \
   --format="value(config.name)" | sort > ./audit-state/apis-before.txt
 
@@ -57,9 +46,9 @@ comm -13 ./audit-state/apis-before.txt ./audit-state/apis-after.txt \
   | tee ./audit-state/apis-enabled-by-audit.txt
 ```
 
-## A4. Create the audit service account
+## A3. Create the audit service account
 
-As yourself — impersonation is not on yet. Add `--dry-run` first to see every grant without changing anything. Terraform does the same job: [`terraform/`](../terraform/readme.md).
+Once per engagement, as yourself — impersonation is not on yet. Add `--dry-run` first to see every grant without changing anything. Terraform does the same job: [`terraform/`](../terraform/readme.md).
 
 ```bash
 cd gcloud
@@ -68,28 +57,17 @@ cd gcloud
 cd ..
 ```
 
-## A5. Impersonate
+## A4. Impersonate, prove it, create the output directory and config
 
-```bash
-gcloud config set auth/impersonate_service_account "$SA_EMAIL"
-gcloud config get-value auth/impersonate_service_account
-```
+Follow [auditor setup](cis-ig1-auditor-setup.md) **steps 5–7**. At the end of them:
 
-Must print the service account. `gcloud auth list` will still show *your* address — that is correct.
+- the token check prints `cis-ig1-auditor@…`, not your own address
+- `./audit-state/runs` and `./audit-state/projects` exist
+- `./audit-state/audit.env` has `APPROVED_REGISTRIES` set
 
-A new impersonation grant can take a minute or two to work. Until it does, commands fail with `Failed to impersonate`.
+A `Failed to impersonate` straight after A3 means the new grant has not propagated. Wait a minute and retry.
 
-## A6. Prove it took effect
-
-```bash
-curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token)" | jq -r .email
-```
-
-Must print `cis-ig1-auditor@…` — the identity every later command runs as. Your own address means impersonation is not active: redo A5. `Failed to impersonate` means the grant from A4 hasn't propagated — wait a minute and retry.
-
-This reads and changes nothing. **Do not prove it by attempting a write instead:** a denied write is inconclusive (an operator without the permission is denied either way), and a successful one creates a real resource in the customer's project.
-
-## A7. Smoke test
+## A5. Smoke test
 
 ```bash
 go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt
@@ -97,7 +75,7 @@ go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-pr
 
 Five organization checks, one per permission family. Any `DENIED` or `ERROR` — stop, fix, re-run. Do not continue. (V86 writes `./audit-state/iam-inventory.txt`.)
 
-## A8. Starting position
+## A6. Starting position
 
 ```bash
 gcloud org-policies list --organization="$ORG_ID"
@@ -105,35 +83,18 @@ gcloud org-policies list --organization="$ORG_ID"
 
 Empty means permissive-default. Record it as Step 0 in the checklist.
 
-## A9. Config values
+## A7. Shortcut — the whole audit in one command
 
-```bash
-go run audit-run.go -init-config ./audit-state/audit.env
-```
-
-Every value comes from the customer, not the estate. Ask for them, then confirm a bucket they named exists — one org-wide query, server-side filtered, same cost on ten buckets or a hundred thousand:
-
-```bash
-gcloud asset search-all-resources --scope=organizations/$ORG_ID \
-  --asset-types=storage.googleapis.com/Bucket \
-  --query='name:backup' --format="value(displayName,project)"
-```
-
-`name:state` for the Terraform state bucket. Expect near-matches — this confirms an answer, it does not produce one. Do not list every bucket in every project: on a large organization that is one call per project and tens of thousands of rows.
-
-Edit `./audit-state/audit.env` — the eleven prerequisite values listed in [CLI validation](cis-ig1-cli-validation.md) (buckets, backup project, approved registries, allowed locations, retention and dormancy thresholds, backup identity, production projects and regions). It also carries `EXCLUDE_PROJECTS=^sys-`: projects matching it (Apps Script's `sys-…` projects by default) are never audited; `none` audits everything. **If one does not exist write `none`, not blank** — blank gives SKIP, `none` gives FAIL, which is the truth.
-
-## A9a. Shortcut — the whole audit in one command
-
-Everything from A10 to C2 in one step, filed into a dated run directory. Skip to C3 afterwards.
+Everything from A8 to C2 in one step, filed into a dated run directory under `audit-state/runs/`. Skip to C3 afterwards.
 
 ```bash
 gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt   # edit to taste
-./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --projects ./audit-state/projects.txt
+./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --out ./audit-state/runs \
+  --projects ./audit-state/projects.txt
 ```
 
 ```
-scratch/runs/2026-09-14_12-58-20/
+audit-state/runs/2026-09-14_12-58-20/
   report/                        what the auditor reads, in reading order
     01-remediation-plan.md
     02-organization/
@@ -150,7 +111,7 @@ scratch/runs/2026-09-14_12-58-20/
 
 `--project ID` (repeatable) or `--all` instead of `--projects`. A check hanging? `--skip V96` leaves it out (reported as SKIP); `--parallel 1` runs checks one at a time so the stuck one is obvious. Every check also has a 3-minute timeout (`-timeout` on `audit-run.go`). Projects that don't exist or can't be seen are listed as `not found` and skipped. The summary at the end shows every pass's `RUN STATUS`.
 
-## A10. Organization pass
+## A8. Organization pass
 
 ```bash
 go run audit-run.go -scope=org -org="$ORG_ID" \
@@ -161,7 +122,7 @@ go run audit-run.go -scope=org -org="$ORG_ID" \
 
 The command exits non-zero whenever any check FAILs — that is findings, not a broken run. The run's health is the status line below.
 
-## A11. Read the run status
+## A9. Read the run status
 
 ```bash
 head -20 ./audit-state/org/01-automated-results.md
@@ -169,7 +130,7 @@ head -20 ./audit-state/org/01-automated-results.md
 
 `UNRELIABLE` or `DEGRADED` means fix and re-run before doing any projects.
 
-## A12. Project list
+## A10. Project list
 
 ```bash
 gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt
@@ -267,6 +228,8 @@ gcloud config get-value account
 
 **Before teardown.** The audit identity cannot delete itself.
 
+Used the [Cloud Shell setup](cis-ig1-auditor-setup.md#part-2--cloud-shell-one-time-setup)? Impersonation lives in the `cis-audit` configuration instead: run `audit-off`, or open a new tab, then [remove the setup](cis-ig1-auditor-setup.md#removing-it-at-the-end-of-the-engagement) at the end of the engagement.
+
 ## C4. Destroy the audit identity
 
 ```bash
@@ -284,7 +247,7 @@ while read -r API; do
 done < ./audit-state/apis-enabled-by-audit.txt
 ```
 
-Never the full A3 list — some were already on and in use.
+Never the full A2 list — some were already on and in use.
 
 ## C6. Confirm nothing remains
 
@@ -307,18 +270,15 @@ Expected: empty, empty, `NOT_FOUND`.
 
 **Organization**
 
-- [ ] A1 variables set
-- [ ] A2 go, jq, gcloud, gcloud alpha/beta present
-- [ ] A3 `apis-enabled-by-audit.txt` written
-- [ ] A4 service account created
-- [ ] A5 impersonation active
-- [ ] A6 write attempt denied
-- [ ] A7 smoke test, no DENIED
-- [ ] A8 starting position recorded
-- [ ] A9 `audit.env` filled, anything non-existent set to `none`
-- [ ] A10 org pass complete
-- [ ] A11 run status OK
-- [ ] A12 project list captured
+- [ ] A1 shell set up, on your branch, variables set (setup steps 1–4)
+- [ ] A2 `apis-enabled-by-audit.txt` written
+- [ ] A3 service account created
+- [ ] A4 token check prints the auditor; `audit-state/` and `audit.env` in place (setup steps 5–7)
+- [ ] A5 smoke test, no DENIED
+- [ ] A6 starting position recorded
+- [ ] A8 org pass complete (or A7 in place of A8 to C2)
+- [ ] A9 run status OK
+- [ ] A10 project list captured
 
 **Projects**
 

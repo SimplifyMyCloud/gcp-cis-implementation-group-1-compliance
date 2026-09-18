@@ -2,6 +2,88 @@
 
 Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where possible, honest about what isn't.
 
+## Start here
+
+Two people, two jobs. They can be the same person.
+
+| Role | Does | When | Needs |
+|---|---|---|---|
+| **Engagement admin** | Enables the APIs and creates the read-only audit service account | Once per customer, before the first audit | Rights to grant org-level IAM; Terraform, or bash for the `gcloud/` scripts |
+| **Auditor** | Sets up a shell, runs the audit, reads and commits the results | Every audit session | The right to impersonate the audit service account — nothing else on the organization |
+
+The audit runs as a read-only service account, impersonated and never keyed — a key would breach safeguard 5.2, which this audit tests.
+
+## The order of work
+
+| # | Step | Who | How |
+|---|---|---|---|
+| 1 | **Enable the 17 APIs** in the audit host project. Snapshot first, so teardown disables only what you enabled | Admin, once | [Run sheet A2](docs/cis-ig1-run-sheet.md#a2-snapshot-enabled-apis-then-enable) · [the list and why](docs/testing/required-apis.md) |
+| 2 | **Create the audit service account** and grant auditors the right to impersonate it | Admin, once | [`terraform/`](terraform/readme.md), or [`gcloud/create.sh`](gcloud/readme.md) then `verify.sh` |
+| 3 | **Set up the auditor shell** — sign in, clone the repo onto your branch, impersonate, prove it, create `audit-state/` and `audit.env` | Auditor, every session | **[Auditor setup](docs/cis-ig1-auditor-setup.md)**. In Cloud Shell, set it up once and then it is `audit-on` |
+| 4 | **Smoke test** — five checks, one per permission family. Any `DENIED` or `ERROR`: stop and fix | Auditor | `go run audit-run.go -scope=org -org=$ORG_ID -only V27,V43,V86,V125,V181 -no-prompt` |
+| 5 | **Run the audit** | Auditor | [`run-audit.sh`](#run-auditsh--the-whole-audit-in-one-command), below |
+| 6 | **Read the report.** Confirm every pass says `RUN STATUS: OK`, work the remediation plan, judge the REVIEW items | Auditor | `audit-state/runs/<timestamp>/report/`, in file order |
+| 7 | **Do the manual half** — 102 requirements no API can answer: 30 console tasks, 72 process questions | Auditor, with the customer | [Runbook phases 8–9](docs/cis-ig1-audit-runbook.md) · [process interview](docs/training/09-process-interview.md) |
+| 8 | **Commit the results** to your branch and push | Auditor | `git add audit-state && git commit && git push` — [setup step 8](docs/cis-ig1-auditor-setup.md#8-run-and-commit) |
+| 9 | **Tear down** — stop impersonating, destroy the service account, disable only the APIs step 1 enabled | Admin, at the end | [Run sheet Part C](docs/cis-ig1-run-sheet.md#part-c--compile-and-tear-down) |
+
+To run the passes one at a time instead of step 5, follow the [run sheet](docs/cis-ig1-run-sheet.md) from A8.
+
+Step 9 is not optional. A standing org-wide read identity fails safeguards 5.1, 5.4 and 6.2 — the controls this audit just measured.
+
+## run-audit.sh — the whole audit in one command
+
+Runs every automated check for the organization and the projects you name, then files the results into one dated directory. Run it once steps 1–4 are done:
+
+```bash
+./run-audit.sh --config ./audit-state/audit.env --out ./audit-state/runs --all                # every ACTIVE project
+./run-audit.sh --config ./audit-state/audit.env --out ./audit-state/runs --project PROJECT    # repeatable
+./run-audit.sh --config ./audit-state/audit.env --out ./audit-state/runs --projects list.txt  # one ID per line
+```
+
+It reads the organization from `$ORG_ID` (or `--org`). What it does, in order:
+
+1. **Resolves the targets** from `--all`, `--project` or `--projects`, and drops any project matching `EXCLUDE_PROJECTS` in `audit.env` — default `^sys-`, the projects Apps Script creates. Both lists go into `evidence/`.
+2. **Prints who it is running as.** If that line says `NOT impersonating`, stop with Ctrl-C — the run is measuring your own access, not the auditor's.
+3. **Runs the organization pass** — `audit-run.go -scope=org`, 86 checks.
+4. **Runs one project pass per target** — `audit-run.go -scope=project`, 103 checks each. A project that does not exist, or that the auditor cannot see, is recorded as `not found` and skipped.
+5. **Builds the remediation plan** with `rollup.go`: one row per finding, with the projects it affects.
+6. **Scores the checklist** with `compliance-report.go`. This scores the boxes ticked in `docs/cis-ig1-gcp-checklist.md`, not this run's results.
+7. **Files everything** and prints a summary line per pass.
+
+```
+audit-state/runs/2026-09-14_12-58-20/
+  report/                        what the auditor reads, in reading order
+    01-remediation-plan.md
+    02-organization/
+      01-automated-results.md
+      02-manual-gcp-tasks.md
+      03-manual-process.md
+    03-projects/
+      <project-id>.md            one per project
+    04-compliance-score.txt
+    remediation-plan.csv         import into the tracker
+  evidence/
+    audit.env  targets.txt  run.log  iam-inventory.txt  excluded.txt  not-found.txt
+```
+
+**It exits non-zero only if a pass is `UNRELIABLE`, `DEGRADED` or wrote nothing.** Failed checks are findings, not a broken run. `--skip V96` leaves out a check that hangs (reported as SKIP), and `--parallel 1` runs checks one at a time, in order. Without `--out`, runs go to `./scratch/runs/`, which is git-ignored and so never committed.
+
+Do not edit `run-audit.sh` while it is running. Bash reads a script as it goes, so the change corrupts the run in progress.
+
+## The scripts
+
+| Script | Role | Run by |
+|---|---|---|
+| [`run-audit.sh`](run-audit.sh) | The whole audit in one command: org pass, project passes, rollup, score, filed into one dated directory | Auditor |
+| [`audit-run.go`](audit-run.go) | The check engine. Reads the checks straight from [`docs/cis-ig1-cli-validation.md`](docs/cis-ig1-cli-validation.md) — the document is the single source, with no second copy to drift — runs them in parallel, scores each one, and writes a pack of results. `-list` shows what would run, `-only` runs a subset, `-init-config` writes `audit.env` | Auditor, directly or through `run-audit.sh` |
+| [`rollup.go`](rollup.go) | Reads every pack and pivots on the finding rather than the project: one org policy fix is one row, not 105 | `run-audit.sh`, or by hand |
+| [`compliance-report.go`](compliance-report.go) | Scores the checklist: not started, PR submitted (and how long it has waited for approval), compliant. `--update` syncs Status lines to the checkboxes | Auditor, as remediation progresses |
+| [`gcloud/create.sh`](gcloud/create.sh) | Creates the audit service account, its three custom roles and its org bindings without Terraform. Writes `audit-sa-record.txt`, the record teardown needs | Admin |
+| [`gcloud/verify.sh`](gcloud/verify.sh) | Confirms the identity is exactly as intended — no keys, no write verbs, the expected bindings — and after teardown, that nothing remains | Admin |
+| [`gcloud/destroy.sh`](gcloud/destroy.sh) | Removes everything `create.sh` made, from its record | Admin |
+| [`terraform/audit-service-account/`](terraform/audit-service-account/readme.md) | The Terraform module for the same service account: `apply` to create it, `destroy` to remove every trace | Admin |
+
 ## Documents
 
 | | |
@@ -32,62 +114,6 @@ Audit a Google Cloud Organization against CIS IG1. Read-only, scripted where pos
 | Manual | 102 · 30 console tasks, 72 process and documentation |
 
 100% here is the GCP half of IG1, not IG1. Say so when reporting.
-
-## Quick start
-
-Prerequisites: `go`, `jq`, gcloud with the `alpha` and `beta` components, Terraform, and the [17 APIs](docs/testing/required-apis.md#1-enable-in-the-audit-host-project--17-apis) enabled in the audit project.
-
-```bash
-export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
-
-cd terraform/audit-service-account
-gcloud auth application-default login
-# edit terraform.tfvars — replace the REPLACE_* values
-terraform init && terraform apply
-eval "$(terraform output -raw impersonate_command)"
-
-cd ../..
-go run audit-run.go -scope=org -org=$ORG_ID -init-config ./audit-state/audit.env
-# edit audit.env — APPROVED_REGISTRIES (ALLOWED_LOCATIONS defaults to the continental US)
-
-go run audit-run.go -scope=org -org=$ORG_ID -config ./audit-state/audit.env -pack ./audit-state/org
-go run audit-run.go -scope=project -org=$ORG_ID -project=PROJECT -config ./audit-state/audit.env -pack ./audit-state/projects/PROJECT
-
-go run rollup.go -in ./audit-state -out ./audit-state/remediation-plan.md -csv ./audit-state/remediation-plan.csv
-go run compliance-report.go        # score the checklist
-```
-
-**Or run the whole audit with one command.** Once impersonation is set and `audit.env` is filled in, `run-audit.sh` runs the org pass, the project passes, rollup and the score, and files everything for that run into one dated directory:
-
-```bash
-./run-audit.sh --org $ORG_ID --config ./audit-state/audit.env --project PROJECT     # repeatable
-./run-audit.sh --org $ORG_ID --config ./audit-state/audit.env --projects list.txt  # one ID per line
-./run-audit.sh --org $ORG_ID --config ./audit-state/audit.env --all                # every ACTIVE project
-```
-
-```
-scratch/runs/2026-09-14_12-58-20/
-  report/                        what the auditor reads, in reading order
-    01-remediation-plan.md
-    02-organization/
-      01-automated-results.md
-      02-manual-gcp-tasks.md
-      03-manual-process.md
-    03-projects/
-      <project-id>.md            one per project
-    04-compliance-score.txt
-    remediation-plan.csv         import into the tracker
-  evidence/
-    audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
-```
-
-`--skip V96` leaves out a check (reported as SKIP) and `--parallel 1` runs checks one at a time, in order. Projects whose ID matches `EXCLUDE_PROJECTS` in `audit.env` are never audited — default `^sys-`, the projects Apps Script creates; they are listed in `evidence/excluded.txt`.
-
-Runs go to `./scratch/runs/` (git-ignored) by default; `--out ./audit-state/runs` keeps them in the repository. It exits non-zero only if a pass is `UNRELIABLE` or `DEGRADED`.
-
-A healthy pass says `RUN STATUS: OK` at the top of `01-automated-results.md`. `audit-run.go` exits non-zero whenever a check FAILs — that means findings, not a broken run. Step-by-step: [run sheet](docs/cis-ig1-run-sheet.md).
-
-The audit runs as a read-only service account, impersonated never keyed — a key would breach safeguard 5.2, which this audit tests. `terraform destroy` removes every trace.
 
 ## Three things that catch people out
 

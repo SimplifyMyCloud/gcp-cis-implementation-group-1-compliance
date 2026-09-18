@@ -42,20 +42,18 @@ Both are changes to the organization. Both are recorded in `./audit-state/` as t
 
 ## Phase 1 — Prerequisites
 
-```bash
-mkdir -p ./audit-state          # everything this audit records lives here
-gcloud auth login
-export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
-export AUDIT_PROJECT=<project carrying API quota>
-gcloud config set project $AUDIT_PROJECT
-which jq                        # required by ~45 checks, not optional
-```
+### Set up your shell
+
+Follow [auditor setup](cis-ig1-auditor-setup.md) **steps 1–4**: tools, sign-in, the repository on your own branch, and the `ORG_ID`, `AUDIT_PROJECT` and `SA_EMAIL` variables. `jq` is not optional — about 45 checks need it.
+
+The API and service account steps below are once per engagement, run as yourself. If they are already done, go to setup steps 5–7 and then [Phase 2](#phase-2--establish-the-starting-position).
 
 ### Enable the APIs
 
 **Snapshot first** — at teardown you must disable only the APIs *you* turned on.
 
 ```bash
+mkdir -p ./audit-state          # everything this audit records lives here
 gcloud services list --enabled --project="$AUDIT_PROJECT" \
   --format="value(config.name)" | sort > ./audit-state/apis-before.txt
 
@@ -91,21 +89,19 @@ cd terraform/audit-service-account
 gcloud auth application-default login    # ADC — separate from `gcloud auth login`
 # edit terraform.tfvars
 terraform init && terraform plan && terraform apply
-
-eval "$(terraform output -raw impersonate_command)"
-gcloud config get-value auth/impersonate_service_account
+cd ../..
 ```
 
-That must print the auditor service account. `gcloud auth list` will still show *your* address — impersonation layers a token over your credential rather than switching accounts, which is why audit logs record both identities.
+Then impersonate it and prove the switch took effect: [auditor setup](cis-ig1-auditor-setup.md) **steps 5–6**. Do not prove it with a write — the setup doc explains why.
 
 Every permission is read-only, including custom roles replacing predefined ones that carry write verbs. Full detail: [`terraform/readme.md`](../terraform/readme.md).
 
 **Enable the APIs before switching**, or as yourself — a new service account cannot enable services.
 
-- [ ] `ORG_ID` and `AUDIT_PROJECT` exported
-- [ ] `jq` present
+- [ ] Shell set up and on your branch (setup steps 1–4)
 - [ ] `apis-enabled-by-audit.txt` written
-- [ ] Service account created and impersonation active
+- [ ] Service account created
+- [ ] Token check prints the auditor service account (setup step 6)
 - [ ] No service account key created
 
 ---
@@ -128,13 +124,7 @@ Record it as Step 0 in the checklist. It determines how much of Controls 3, 4, 5
 
 Five organization checks, one per permission family. Cheaper to fail here than 188 checks later.
 
-Confirm impersonation is active:
-
-```bash
-gcloud config get-value auth/impersonate_service_account
-```
-
-That must print the auditor service account. If it prints nothing, impersonation is not set and the smoke test proves nothing about the identity that will do the audit.
+Confirm impersonation is active with the token check from [auditor setup step 6](cis-ig1-auditor-setup.md#6-prove-it-took-effect). It must print the auditor service account. If it prints your own address, the smoke test proves nothing about the identity that will do the audit.
 
 ```bash
 go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt
@@ -150,18 +140,7 @@ Any `DENIED` is a missing grant on the **service account**. **Fix it and rerun b
 
 Checks discover their own resources. Where a safeguard concerns projects, Cloud SQL instances, GKE clusters, buckets, KMS keys or Cloud Routers, the command enumerates **every** one — because a requirement is met only when every resource meets it. One non-compliant instance out of ten fails the check, and the output names which one.
 
-Two values remain, because they are policy rather than anything queryable:
-
-```bash
-go run audit-run.go -init-config ./audit-state/audit.env
-```
-
-| Value | What it is | Example | Checks |
-|---|---|---|---|
-| `APPROVED_REGISTRIES` | Registry prefixes images may come from, matched from the left | `us-docker.pkg.dev/acme,gcr.io/acme,gke.gcr.io` | 2 |
-| `ALLOWED_LOCATIONS` | Locations data may live in. **Defaults to the continental US** — set only if data lives elsewhere | `europe-west1,eu,EU` | 2 |
-
-Lists are comma-separated with no spaces.
+Two values remain, because they are policy rather than anything queryable: `APPROVED_REGISTRIES`, which you ask the customer for, and `ALLOWED_LOCATIONS`, which defaults to the continental US. Create `./audit-state/audit.env` and set them as in [auditor setup step 7](cis-ig1-auditor-setup.md#7-build-the-output-directory-and-config).
 
 Everything else the audit needs to know about your policy — which bucket holds backups, how long logs must be kept, what counts as a dormant service account, which projects are production — it asks a person instead. Those differ by team and by project even inside one organization, so a single value for the estate would be wrong more often than right. Those checks still run and still gather the evidence; they report **REVIEW**, and their output is what you take into that conversation.
 
@@ -376,6 +355,8 @@ gcloud config unset auth/impersonate_service_account   # FIRST — the SA cannot
 cd terraform/audit-service-account
 terraform destroy
 ```
+
+Used the [Cloud Shell setup](cis-ig1-auditor-setup.md#part-2--cloud-shell-one-time-setup)? Impersonation lives in the `cis-audit` configuration instead: run `audit-off`, or open a new tab, then [remove the setup](cis-ig1-auditor-setup.md#removing-it-at-the-end-of-the-engagement) at the end of the engagement.
 
 Then disable only the APIs this audit enabled:
 

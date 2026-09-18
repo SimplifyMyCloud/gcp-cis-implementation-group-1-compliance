@@ -66,6 +66,8 @@
 
 ## Commands
 
+Set up the shell first: [auditor setup](../cis-ig1-auditor-setup.md), or `audit-on` in Cloud Shell.
+
 ```bash
 # Organization pass
 go run audit-run.go -scope=org -org=$ORG_ID -pack ./audit-state/org

@@ -6,27 +6,13 @@ For the full engagement including teardown and reporting, follow the [runbook](c
 
 ## Setup
 
-```bash
-go version && jq --version          # jq is required, not optional
-gcloud components list --filter="id:(alpha beta)" --format="value(id,state.name)"   # both installed
-export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
-export AUDIT_PROJECT=<project carrying API quota>
-```
+Set up your shell with [auditor setup](cis-ig1-auditor-setup.md) steps 1–7: tools, sign-in, your branch, variables, impersonation, the token check, and `audit-state/` with `audit.env`. With the Cloud Shell setup done, that is `audit-on`.
 
-Enable the APIs and create the service account — [runbook phase 1](cis-ig1-audit-runbook.md#phase-1--prerequisites). Then impersonate:
-
-```bash
-cd terraform/audit-service-account
-eval "$(terraform output -raw impersonate_command)"
-gcloud config get-value auth/impersonate_service_account   # must print the SA
-```
-
-> `gcloud auth list` will still show your own address. That is correct — impersonation layers a short-lived token over your credential rather than switching accounts, which is why audit logs record both identities.
+The APIs and the service account must exist first. They are set up once per engagement: [runbook phase 1](cis-ig1-audit-runbook.md#phase-1--prerequisites).
 
 ## Smoke test
 
 ```bash
-cd ../..
 go run audit-run.go -scope=org -org="$ORG_ID" -only V27,V43,V86,V125,V181 -no-prompt
 ```
 
@@ -34,20 +20,16 @@ Five organization checks, one per permission family. Any `DENIED` is a missing g
 
 ## Config
 
-```bash
-go run audit-run.go -init-config ./audit-state/audit.env
-```
-
-One prerequisite value — `APPROVED_REGISTRIES`, the registry prefixes images may come from. `ALLOWED_LOCATIONS` defaults to the continental United States and only needs setting if data lives elsewhere. Everything else is discovered, or asked of a human at review time.
+Created in [setup step 7](cis-ig1-auditor-setup.md#7-build-the-output-directory-and-config). One prerequisite value — `APPROVED_REGISTRIES`, the registry prefixes images may come from. `ALLOWED_LOCATIONS` defaults to the continental United States and only needs setting if data lives elsewhere. Everything else is discovered, or asked of a human at review time.
 
 **If one does not exist, write `none`, not blank.** Blank gives `SKIP` ("could not check"); `none` gives `FAIL`, which is the truth — no backup bucket is safeguard 11.3 failing.
 
 ## Run
 
-In one command — org pass, project passes, rollup and score, filed into `scratch/runs/<date_time>/report/` and `evidence/`:
+In one command — org pass, project passes, rollup and score, filed into `audit-state/runs/<date_time>/report/` and `evidence/`:
 
 ```bash
-./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --projects projects.txt   # or --project ID / --all
+./run-audit.sh --org "$ORG_ID" --config ./audit-state/audit.env --out ./audit-state/runs --projects projects.txt   # or --project ID / --all
 ```
 
 Or step by step:
@@ -90,5 +72,7 @@ Useful flags: `-list` · `-only V27,V91` · `-parallel 4` · `-timeout 10m` · `
 ```bash
 gcloud config unset auth/impersonate_service_account
 ```
+
+Used the [Cloud Shell setup](cis-ig1-auditor-setup.md#part-2--cloud-shell-one-time-setup)? Impersonation lives in the `cis-audit` configuration instead: run `audit-off`, or open a new tab, then [remove the setup](cis-ig1-auditor-setup.md#removing-it-at-the-end-of-the-engagement) at the end of the engagement.
 
 Before any teardown — the service account cannot delete itself. Teardown is [runbook phase 11](cis-ig1-audit-runbook.md#phase-11--tear-down-the-audit-access), and skipping it fails safeguards 5.1, 5.4 and 6.2.

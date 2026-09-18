@@ -47,7 +47,7 @@ gcloud config set auth/impersonate_service_account \
 gcloud config get-value auth/impersonate_service_account
 ```
 
-That must print the service account.
+That must print the service account. That confirms the service account works. To set up a shell for the audit itself — branch, token check, output directory, config, and the reusable Cloud Shell setup — follow [auditor setup](../docs/cis-ig1-auditor-setup.md).
 
 > **`gcloud auth list` will still show your own address, and that is correct.** Impersonation does not switch accounts — you stay authenticated as yourself and gcloud exchanges that credential for a short-lived service account token on each call. That is exactly why audit logs record both identities.
 

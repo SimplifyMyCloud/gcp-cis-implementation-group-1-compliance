@@ -243,6 +243,8 @@ Must print `cis-ig1-auditor@…`. Your own address means impersonation is not ac
 
 Do not test this with a write instead. A denied write proves nothing on its own, since an operator lacking the permission is denied whether or not impersonation is active, and a successful one leaves a real service account behind in the project.
 
+To set up a shell for the audit itself — branch, output directory, config, and the reusable Cloud Shell setup — follow [auditor setup](../docs/cis-ig1-auditor-setup.md).
+
 ---
 
 ## 8. Delete everything

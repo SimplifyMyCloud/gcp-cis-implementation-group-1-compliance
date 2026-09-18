@@ -6,6 +6,8 @@
 
 Organization first. Its findings explain the project results — a missing org policy constraint is *why* fifty projects each have a default network.
 
+Everything below assumes the shell is already set up — signed in, on your branch, impersonating the auditor, with `audit-state/audit.env` in place. That is [auditor setup](../cis-ig1-auditor-setup.md), or `audit-on` once its Cloud Shell setup is done.
+
 ```bash
 export ORG_ID=$(gcloud organizations list --format='value(ID)' | head -1)
 ```
