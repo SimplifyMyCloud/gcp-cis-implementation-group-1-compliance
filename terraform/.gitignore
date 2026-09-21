@@ -1,0 +1,19 @@
+# Provider binaries — ~116 MB for google, over GitHub's file size limit
+**/.terraform/
+
+# State records the audit identity and every binding created. It is what
+# `terraform destroy` reads to remove them — keep it until teardown is
+# verified, then delete it. Never commit it.
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+
+# terraform.tfvars IS committed — org ID, project ID, auditor emails.
+# None are credentials, and committing it makes the apply reproducible.
+
+# .terraform.lock.hcl IS committed — pins provider versions.
+
+.DS_Store
+._*

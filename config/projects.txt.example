@@ -1,0 +1,19 @@
+# Projects to audit — one ID per line. Blank lines and # comments ignored.
+#
+#   cp config/projects.txt.example config/projects.txt
+#
+# Used two ways:
+#   ./run-audit.sh --projects config/projects.txt      audit every one
+#   go run rollup.go -projects config/projects.txt     the denominator for
+#                                                      organization coverage
+#
+# For the organization score this list is the ESTATE, not the backlog: it is
+# what "audited 12 of 40 projects" divides by. Keep it the full list even
+# while you work through it one project at a time.
+#
+# Generate it from the live organization:
+#   gcloud projects list --filter='lifecycleState:ACTIVE' --format='value(projectId)' > config/projects.txt
+
+acme-prod-web
+acme-prod-data
+acme-dev-sandbox

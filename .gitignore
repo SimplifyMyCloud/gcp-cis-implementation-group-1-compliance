@@ -1,0 +1,124 @@
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+# Finder writes .DS_Store into every directory it displays, recording view
+# settings (icon positions, window size, sort order). Harmless locally, but it
+# also embeds the directory listing — including names of since-deleted files —
+# which is why it is treated as an information disclosure finding when it ends
+# up on a web server.
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------------------------------------------------------------------------
+# Windows
+# ---------------------------------------------------------------------------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---------------------------------------------------------------------------
+# Linux
+# ---------------------------------------------------------------------------
+*~
+.fuse_hidden*
+.nfs*
+
+# ---------------------------------------------------------------------------
+# Editors
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# ---------------------------------------------------------------------------
+# Working notes
+# ---------------------------------------------------------------------------
+# Completed checklists are audit evidence and may name findings in a live
+# estate. Keep filled-in copies out of the repo unless that is deliberate.
+*-completed.md
+*-filled.md
+/scratch/
+
+# ---------------------------------------------------------------------------
+# Go
+# ---------------------------------------------------------------------------
+# Only if someone builds the script rather than `go run`-ing it.
+/compliance-report
+/audit-run
+
+# ---------------------------------------------------------------------------
+# Audit output
+# ---------------------------------------------------------------------------
+# Audit results ARE committed here — this repository is private and holds the
+# engagement's evidence alongside the tooling that produced it.
+#
+# What that means in practice: results name every public bucket, every
+# over-permissioned account, and every open firewall rule in the estate. Repo
+# access is therefore access to the findings, so keep the access list matched
+# to who should see them. If this repository is ever made public, forked, or
+# moved between organizations, the results go with it — git history outlives
+# the private setting.
+#
+# Only build artefacts and scratch files are ignored:
+audit-run.log
+*.cis.json
+
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+# State records the audit identity and every binding it created. It is the
+# teardown record and must not be committed.
+#
+# .terraform/ holds downloaded provider binaries — the google provider alone is
+# ~116 MB, over GitHub's 100 MB per-file limit. Never commit it.
+#
+# terraform.tfvars IS committed: it holds an organization ID, a project ID and
+# a list of auditor emails. None of those are credentials, and committing it
+# means anyone can reproduce exactly what was applied.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+
+# .terraform.lock.hcl SHOULD be committed — it pins provider versions so every
+# operator resolves the same ones. It is small and contains no secrets.
+!**/.terraform.lock.hcl
+
+# Audit output names real projects, buckets and IAM principals.
+#
+# In a CUSTOMER's private engagement repository the results ARE committed —
+# that is the deliverable, and a finding should be reproducible from the
+# settings that produced it. DELETE THE NEXT LINE on the customer's side.
+#
+# In THIS repository — public, and the kit's own development — they are not.
+# Two accidents have already put a live IAM inventory in this history, both
+# from `git add -A` sweeping a directory nobody meant to commit.
+/audit-state/
+#
+# Nothing in this repository should ever hold a credential. Service account
+# keys in particular: the audit runs by impersonation precisely so that no key
+# exists, and committing one would break safeguard 5.2 — which this repository
+# exists to test.
+*.json.key
+*-key.json
+credentials.json
+service-account*.json
+
+# Settings are the auditor's own: the customer's project names, registry
+# paths and residency policy. The examples and the readme are committed so a
+# fresh clone knows what to fill in; the filled-in files are not.
+/config/*
+!/config/readme.md
+!/config/*.example
