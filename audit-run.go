@@ -240,7 +240,12 @@ func main() {
 
 	// One settings file, in one place, so the auditor never types a path and
 	// nothing that matters lives in a directory anybody might clear out.
-	if *config == "" {
+	//
+	// Not while writing a template: -init-config lists the placeholders that
+	// are still unanswered, so picking the existing config up implicitly would
+	// leave every answered key OUT of the template it just wrote — a starter
+	// file missing the one value the operator most needs to set.
+	if *config == "" && *initCfg == "" {
 		if _, err := os.Stat(defaultConfig); err == nil {
 			*config = defaultConfig
 		}
@@ -1602,6 +1607,9 @@ func writeConfigTemplate(path string, checks []check) error {
 	b.WriteString("# The audit service account the auditor impersonates. Used by the setup\n")
 	b.WriteString("# steps, not by the audit itself.\n")
 	b.WriteString("SA_EMAIL=\n\n")
+	b.WriteString("# The engagement's branch: <customer>-gcp-ig1-audit. One branch for the\n")
+	b.WriteString("# whole audit, shared by everyone working it.\n")
+	b.WriteString("AUDIT_BRANCH=\n\n")
 	b.WriteString("# --- Check inputs ------------------------------------------------------\n\n")
 	for _, k := range keys {
 		fmt.Fprintf(&b, "# %s (%d check(s))\n%s=\n\n", discoverHint[k], count[k], k)
