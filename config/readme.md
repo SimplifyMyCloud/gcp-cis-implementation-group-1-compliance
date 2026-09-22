@@ -29,6 +29,7 @@ No `--config`, no `--org`, no exported variables. `run-audit.sh` reads
 | `ORG_ID` | `run-audit.sh`, `audit-run.go` | The numeric ID, not the domain |
 | `AUDIT_PROJECT` | The setup steps | Owns the service account, has the audit APIs enabled |
 | `SA_EMAIL` | The setup steps | The identity the auditor impersonates |
+| `AUDIT_BRANCH` | The setup steps | Your branch, e.g. `dana/cis-ig1-audit`. Per auditor, not derived from `whoami` |
 | `APPROVED_REGISTRIES` | V20, V22 | **Required.** Empty means both SKIP, which holds the audit below 100% complete |
 | `EXCLUDE_PROJECTS` | Target resolution | Regex on the project ID; defaults to `^sys-` |
 | `ALLOWED_LOCATIONS` | The residency checks | Optional; defaults to the continental US, and setting it **replaces** that list rather than extending it |
@@ -64,12 +65,18 @@ organization:
 gcloud projects list --filter='lifecycleState:ACTIVE' --format='value(projectId)' > config/projects.txt
 ```
 
-## What is committed, and what is not
+## What is committed
 
-Only the `.example` files and this readme. `config/audit.env` and
-`config/projects.txt` are gitignored: they hold the customer's project names,
-registry paths and residency policy, which are theirs to publish rather than
-yours.
+All of it. This repository assumes it is private, so `config/audit.env` and
+`config/projects.txt` are committed along with the results in `audit-state/`.
+
+That is deliberate rather than lax. Everyone auditing the engagement works
+from one settings file, which is what makes their results comparable: if one
+auditor's `APPROVED_REGISTRIES` differs by a single prefix, their projects
+pass and fail on different criteria from everyone else's and nothing in the
+output says so.
+
+The `.example` files stay as the starting point for the next engagement.
 
 Nothing in this repository should ever hold a credential. The audit runs by
 impersonation precisely so that no service account key exists — committing one

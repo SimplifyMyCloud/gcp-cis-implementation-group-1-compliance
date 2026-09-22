@@ -41,12 +41,10 @@ $RECYCLE.BIN/
 *.tmp
 
 # ---------------------------------------------------------------------------
-# Working notes
+# Scratch
 # ---------------------------------------------------------------------------
-# Completed checklists are audit evidence and may name findings in a live
-# estate. Keep filled-in copies out of the repo unless that is deliberate.
-*-completed.md
-*-filled.md
+# Nothing the audit produces goes here — runs are written to audit-state/runs/
+# and are committed. This is for whatever you keep beside the work.
 /scratch/
 
 # ---------------------------------------------------------------------------
@@ -96,21 +94,18 @@ credentials.json
 service-account*.json
 
 # ---------------------------------------------------------------------------
-# Results and settings
+# Results and settings ARE committed
 # ---------------------------------------------------------------------------
-# >>> DELETE THIS WHOLE BLOCK IN A CUSTOMER ENGAGEMENT REPOSITORY >>>
+# This repository assumes it is private. audit-state/ is the deliverable, and
+# config/audit.env and config/projects.txt are committed with it so that every
+# auditor on the engagement scores against identical criteria rather than
+# retyping the policy answers. Neither holds a credential.
 #
-# There, results are the deliverable and belong in git, and the settings are
-# shared by the whole audit team so that everyone scores against identical
-# criteria. See "Running with a team" in docs/cis-ig1-audit-runbook.md.
+# What that means in practice: repository access is access to the findings.
+# Results name every public bucket, every over-permissioned account and every
+# open firewall rule in the estate. Keep the access list matched to who is
+# allowed to see them, and keep the repository private — if it is ever made
+# public, forked, or moved between organizations, the results go with it.
+# History outlives the setting.
 #
-# Here, they are ignored. This repository is public and holds the kit's own
-# development. Audit output names real projects, buckets and IAM principals,
-# and a live IAM inventory has reached this history twice already — both times
-# from `git add -A` sweeping a directory nobody meant to commit.
-/audit-state/
-/config/*
-!/config/readme.md
-!/config/*.example
-#
-# <<< END OF THE BLOCK TO DELETE <<<
+# Add your own paths when you commit. Never `git add -A`.

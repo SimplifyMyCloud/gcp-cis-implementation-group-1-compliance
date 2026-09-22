@@ -86,7 +86,7 @@ open -e config/audit.env      # or: vi config/audit.env
 
 **If the customer has no approved-registry list, write `none`, not blank.** Blank gives SKIP and the two checks disappear from the report. `none` gives FAIL, which is the truth — with no list of approved sources, safeguard 2.3 is not met.
 
-`config/audit.env` names the customer's projects and registries, so it is gitignored — see [`config/readme.md`](../config/readme.md). The run copies it into `evidence/audit.env`, so a result can always be reproduced from the settings that produced it.
+`config/audit.env` is committed with the engagement — see [`config/readme.md`](../config/readme.md). The run also copies it into `evidence/audit.env`, so a result can always be reproduced from the exact settings that produced it, even after the shared file moves on.
 
 ### 5. Impersonate the audit service account
 

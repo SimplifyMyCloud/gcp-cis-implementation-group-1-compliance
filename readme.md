@@ -50,9 +50,7 @@ cp config/projects.txt.example config/projects.txt   # optional
 ./run-audit.sh --project some-project-id
 ```
 
-In **this** repository only the `.example` files are committed, because it is public. In a **customer engagement repository the filled-in files belong in git** — one shared settings file is what keeps a team of auditors scoring against identical criteria, and the results are the deliverable. Deleting one marked block from `.gitignore` allows both: see [Running with a team](docs/cis-ig1-audit-runbook.md#running-with-a-team) and [setup step 8](docs/cis-ig1-auditor-setup.md#8-run-and-commit).
-
-[`config/readme.md`](config/readme.md) is the full reference, including why `none` is an answer and blank is not.
+Commit the filled-in file. The repository assumes it is private, and one shared settings file is what keeps a team of auditors scoring against identical criteria — see [Running with a team](docs/cis-ig1-audit-runbook.md#running-with-a-team). [`config/readme.md`](config/readme.md) is the full reference, including why `none` is an answer and blank is not.
 
 ## run-audit.sh — the whole audit in one command
 

@@ -67,10 +67,6 @@ retype it. `config/projects.txt` matters the same way: it is the denominator
 the organization's coverage divides by, so it must be the whole estate rather
 than one auditor's share of it.
 
-Delete the marked block from `.gitignore` to allow both, once, before the team
-begins. The kit ships with results and settings ignored because the kit's own
-repository is public; an engagement repository is the opposite case.
-
 **One person compiles at the end**, after everybody has pushed. The
 organization-wide plan and score are single files regenerated from every run,
 so they are the one thing three people can genuinely conflict over. See

@@ -53,48 +53,15 @@ Application Default Credentials (`gcloud auth application-default login`) are **
 
 ### 3. Be on your branch
 
-You already have the repository: cloning it is a one-time job per machine, folded away below. Cloud Shell keeps your home directory between sessions, so the clone, your SSH key and your `gh` credentials all survive there too.
-
-Move to your own branch and pick up whatever landed on `main` since you were last here:
+You already have the repository on this machine. Move to your own branch and pick up whatever landed on `main` since you were last here:
 
 ```bash
-git switch "$(whoami)/cis-ig1-audit" && git pull && git merge main
+git switch "$AUDIT_BRANCH" && git pull && git merge main
 ```
 
 Merge rather than rebase. The branch holds committed results, and a rebase rewrites commits that may already be pushed.
 
-<details>
-<summary><strong>First time on this machine</strong> — credentials, clone, branch</summary>
-
-Cloud Shell needs GitHub credentials to clone a private repository. Use the GitHub CLI if it is present:
-
-```bash
-gh --version && gh auth login
-```
-
-If `gh` is not installed, create an SSH key and add the public half to your GitHub account at **Settings → SSH and GPG keys**:
-
-```bash
-ssh-keygen -t ed25519 -C "$(gcloud config get-value account)"
-```
-
-```bash
-cat ~/.ssh/id_ed25519.pub
-```
-
-Clone, then branch from an up-to-date `main`. Name the branch after yourself:
-
-```bash
-git clone git@github.com:CUSTOMER_ORG/CUSTOMER_REPO.git && cd CUSTOMER_REPO
-```
-
-```bash
-git switch main && git pull && git switch -c "$(whoami)/cis-ig1-audit"
-```
-
-`whoami` in Cloud Shell is your account name without the domain, so `dana@acme.com` gets `dana/cis-ig1-audit`. Type the name yourself if you work locally under a different user.
-
-</details>
+Name the branch after yourself — `dana/cis-ig1-audit` — so a run is always attributable. Set `AUDIT_BRANCH` in `config/audit.env` alongside the rest of the engagement's settings; deriving it from `whoami` breaks the moment you audit from a second machine with a different login.
 
 ### 4. Set the variables
 
@@ -165,7 +132,7 @@ Locally, use `vi config/audit.env` or your editor.
 | `ALLOWED_LOCATIONS` | Leave commented out. It defaults to the continental United States. Set it only for data that legitimately lives elsewhere, and give the whole list, because the value replaces the default rather than extending it. |
 | `EXCLUDE_PROJECTS` | Leave at `^sys-`, which skips the projects Apps Script creates. |
 
-`config/audit.env` is gitignored: it holds the customer's naming, registries and residency policy, which are theirs to publish rather than yours. [`config/readme.md`](../config/readme.md) has the full reference.
+Commit `config/audit.env` once it is filled in. Everyone auditing this engagement works from the same file, which is what keeps results comparable — a differing `APPROVED_REGISTRIES` silently scores two auditors against different criteria. [`config/readme.md`](../config/readme.md) has the full reference.
 
 Then the output directory, which **is** committed on your branch:
 
@@ -202,26 +169,6 @@ The run ends by printing a `--review` command. Run it to decide each REVIEW chec
 
 Commit the results to your branch and push.
 
-**First, on the engagement repository only, allow it.** The kit ships with
-results *and* settings gitignored, because the kit's own repository is public
-and audit output names real projects, buckets and IAM principals. In the
-customer's private repository both belong in git: the results are the
-deliverable, and one shared `config/audit.env` is what keeps a team of
-auditors scoring against identical criteria. Delete the marked block from
-`.gitignore` once, on your first run:
-
-```bash
-sed -i.bak '/^# >>> DELETE THIS WHOLE BLOCK/,/^# <<< END OF THE BLOCK TO DELETE/d' .gitignore && rm -f .gitignore.bak
-```
-
-Check it took effect — both paths should come back committable:
-
-```bash
-git check-ignore -v config/audit.env audit-state/runs || echo "both committable"
-```
-
-Then:
-
 ```bash
 git add audit-state && git commit -m "CIS IG1 audit run $(date +%Y-%m-%d)"
 ```
@@ -230,7 +177,7 @@ Name the paths you mean. `git add -A` sweeps in whatever else is lying
 around — it is how a live IAM inventory reached a public repository twice.
 
 ```bash
-git push -u origin "$(whoami)/cis-ig1-audit"
+git push -u origin "$AUDIT_BRANCH"
 ```
 
 Stage `audit-state` by name rather than `git add -A`, so nothing else in the working tree goes with it.
@@ -292,23 +239,21 @@ gcloud config configurations list
 
 ### B. Add the block to `~/.bashrc`
 
-Fill in the three values at the top, then paste the whole block. It appends to `~/.bashrc` once. Pasting it again changes nothing.
+Fill in the one value at the top, then paste the whole block. It appends to `~/.bashrc` once. Pasting it again changes nothing.
+
+The block does not restate your organization or service account: it reads them from `config/audit.env`, so there is one settings file and no second copy to drift.
 
 ```bash
-AUDIT_ORG_ID="REPLACE_ORG_ID"
-AUDIT_PROJECT="REPLACE_AUDIT_PROJECT"
 AUDIT_REPO="$HOME/REPLACE_CUSTOMER_REPO"
 
 grep -q '# >>> cis-ig1-audit >>>' ~/.bashrc || {
 cat >> ~/.bashrc <<EOF
 
 # >>> cis-ig1-audit >>>
-export ORG_ID="$AUDIT_ORG_ID"
-export AUDIT_PROJECT="$AUDIT_PROJECT"
-export SA_EMAIL="cis-ig1-auditor@\${AUDIT_PROJECT}.iam.gserviceaccount.com"
 export AUDIT_REPO="$AUDIT_REPO"
 EOF
 cat >> ~/.bashrc <<'EOF'
+[ -f "$AUDIT_REPO/config/audit.env" ] && { set -a; source "$AUDIT_REPO/config/audit.env"; set +a; }
 
 audit-whoami() {
   curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth print-access-token 2>/dev/null)" | jq -r '.email // "no valid token — run: gcloud auth login"'
@@ -333,7 +278,7 @@ EOF
 }
 ```
 
-The first half is written with the values expanded, so `~/.bashrc` holds your organization and project. The second half is written exactly as shown, so the functions run fresh each time you call them.
+The first half is written with `AUDIT_REPO` expanded, so `~/.bashrc` holds the path. The second half is written exactly as shown, so it re-reads `config/audit.env` and defines the functions fresh in every new shell — change a setting and the next tab picks it up.
 
 ### C. Try it
 
@@ -364,7 +309,7 @@ audit-on
 ```
 
 ```bash
-git switch main && git pull && git switch "$(whoami)/cis-ig1-audit" && git merge main
+git switch main && git pull && git switch "$AUDIT_BRANCH" && git merge main
 ```
 
 ```bash
