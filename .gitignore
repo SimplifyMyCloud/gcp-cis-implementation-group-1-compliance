@@ -55,10 +55,11 @@ $RECYCLE.BIN/
 /audit-run
 
 # ---------------------------------------------------------------------------
-# Build artefacts
+# Build artefacts — anchored to the root, so nothing inside audit-state/ can
+# match them by accident.
 # ---------------------------------------------------------------------------
-audit-run.log
-*.cis.json
+/audit-run.log
+/*.cis.json
 
 # ---------------------------------------------------------------------------
 # Terraform
