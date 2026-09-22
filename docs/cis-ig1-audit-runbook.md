@@ -288,12 +288,15 @@ Each pack is self-identifying — `01-automated-results.md` names the project it
 Once every project pass is done, turn 105 packs into one work list:
 
 ```bash
-go run rollup.go -in ./audit-state \
-  -out ./audit-state/remediation-plan.md \
-  -csv ./audit-state/remediation-plan.csv
+go run rollup.go -in ./audit-state/runs \
+  -out       ./audit-state/remediation-plan.md \
+  -csv       ./audit-state/remediation-plan.csv \
+  -score-md  ./audit-state/compliance-score.md \
+  -score-json ./audit-state/compliance-score.json \
+  -projects  ./config/projects.txt
 ```
 
-Pivoted on the **finding**, not the project — one org policy change that fixes 40 projects is one work item, not forty. Ranked by how many projects each affects.
+Four files: the plan, the CSV for the tracker, and the organization's compliance score for people and for the dashboard. Pivoted on the **finding**, not the project — one org policy change that fixes 40 projects is one work item, not forty. Ranked by how many projects each affects.
 
 **Scope** on each row says where the work happens: `org` once, `project × N` repeated, or `org + project × N` for both — apply the constraint *and* clean up what already violates it, because org policy is not retroactive.
 

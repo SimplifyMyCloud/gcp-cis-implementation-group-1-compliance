@@ -126,8 +126,12 @@ Every run writes its score twice, into `report/`:
 The score reflects where it sits. A run holding one project scores that project. Point `rollup.go` at the directory holding every run and it scores the **organization** instead: Pass and Fail compiled across every counted target, and Completion as estate coverage — projects with a finished audit over projects in the organization.
 
 ```bash
-go run rollup.go -in audit-state/runs -out plan.md -csv plan.csv \
-  -score-md score.md -score-json score.json -projects audit-state/projects.txt
+go run rollup.go -in audit-state/runs \
+  -out       audit-state/remediation-plan.md \
+  -csv       audit-state/remediation-plan.csv \
+  -score-md  audit-state/compliance-score.md \
+  -score-json audit-state/compliance-score.json \
+  -projects  config/projects.txt
 ```
 
 Two rules keep the totals honest:

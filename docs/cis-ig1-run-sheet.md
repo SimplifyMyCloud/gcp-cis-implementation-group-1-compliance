@@ -209,11 +209,15 @@ grep -L "RUN STATUS: OK" ./audit-state/projects/*/01-automated-results.md
 ## C1. Remediation plan
 
 ```bash
-go run rollup.go -in ./audit-state \
-  -out ./audit-state/remediation-plan.md \
-  -csv ./audit-state/remediation-plan.csv
+go run rollup.go -in ./audit-state/runs \
+  -out       ./audit-state/remediation-plan.md \
+  -csv       ./audit-state/remediation-plan.csv \
+  -score-md  ./audit-state/compliance-score.md \
+  -score-json ./audit-state/compliance-score.json \
+  -projects  ./config/projects.txt
 
 head -40 ./audit-state/remediation-plan.md
+grep -m1 SCORE ./audit-state/compliance-score.md
 ```
 
 Import the CSV into the tracker: **File → Import → Upload → Insert new sheet**.
