@@ -1,6 +1,6 @@
 # Auditor command-line setup
 
-How to get a shell ready to run the CIS IG1 audit: signed in, on your own branch of the engagement repository, running as the audit service account, with an output directory and config in place.
+How to get a shell ready to run the CIS IG1 audit: signed in, on the engagement branch, running as the audit service account, with an output directory and config in place.
 
 - **[Part 1](#part-1--every-audit)** is the sequence for every audit session, start to finish.
 - **[Part 2](#part-2--cloud-shell-one-time-setup)** is a one-time Cloud Shell setup that turns Part 1's identity steps into one command: `audit-on`.
@@ -51,9 +51,9 @@ When you see that, run `gcloud auth login` and start the interrupted pass again.
 
 Application Default Credentials (`gcloud auth application-default login`) are **not** needed. The audit calls `gcloud` and nothing else.
 
-### 3. Be on your branch
+### 3. Be on the engagement branch
 
-You already have the repository on this machine. Move to your own branch and pick up whatever landed on `main` since you were last here:
+You already have the repository on this machine. Move to the audit's branch and pick up whatever landed on `main` since you were last here:
 
 ```bash
 git switch "$AUDIT_BRANCH" && git pull && git merge main
@@ -61,7 +61,7 @@ git switch "$AUDIT_BRANCH" && git pull && git merge main
 
 Merge rather than rebase. The branch holds committed results, and a rebase rewrites commits that may already be pushed.
 
-Name the branch after yourself — `dana/cis-ig1-audit` — so a run is always attributable. Set `AUDIT_BRANCH` in `config/audit.env` alongside the rest of the engagement's settings; deriving it from `whoami` breaks the moment you audit from a second machine with a different login.
+One branch per engagement, named `<customer>-gcp-ig1-audit`, set as `AUDIT_BRANCH` in `config/audit.env`. Everyone auditing this customer works on it — each run writes its own dated directory, so nobody overwrites anyone, and who did what comes from the commits. See [Running with a team](cis-ig1-audit-runbook.md#running-with-a-team).
 
 ### 4. Set the variables
 
@@ -134,7 +134,7 @@ Locally, use `vi config/audit.env` or your editor.
 
 Commit `config/audit.env` once it is filled in. Everyone auditing this engagement works from the same file, which is what keeps results comparable — a differing `APPROVED_REGISTRIES` silently scores two auditors against different criteria. [`config/readme.md`](../config/readme.md) has the full reference.
 
-Then the output directory, which **is** committed on your branch:
+Then the output directory, which **is** committed:
 
 ```bash
 mkdir -p ./audit-state/runs ./audit-state/projects
@@ -167,7 +167,7 @@ The run ends by printing a `--review` command. Run it to decide each REVIEW chec
 ./run-audit.sh --review ./audit-state/runs/<timestamp>
 ```
 
-Commit the results to your branch and push.
+Commit the results and push.
 
 ```bash
 git add audit-state && git commit -m "CIS IG1 audit run $(date +%Y-%m-%d)"

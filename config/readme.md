@@ -29,7 +29,7 @@ No `--config`, no `--org`, no exported variables. `run-audit.sh` reads
 | `ORG_ID` | `run-audit.sh`, `audit-run.go` | The numeric ID, not the domain |
 | `AUDIT_PROJECT` | The setup steps | Owns the service account, has the audit APIs enabled |
 | `SA_EMAIL` | The setup steps | The identity the auditor impersonates |
-| `AUDIT_BRANCH` | The setup steps | Your branch, e.g. `dana/cis-ig1-audit`. Per auditor, not derived from `whoami` |
+| `AUDIT_BRANCH` | The setup steps | The engagement branch: `<customer>-gcp-ig1-audit`. One for the whole audit, shared by the team |
 | `APPROVED_REGISTRIES` | V20, V22 | **Required.** Empty means both SKIP, which holds the audit below 100% complete |
 | `EXCLUDE_PROJECTS` | Target resolution | Regex on the project ID; defaults to `^sys-` |
 | `ALLOWED_LOCATIONS` | The residency checks | Optional; defaults to the continental US, and setting it **replaces** that list rather than extending it |

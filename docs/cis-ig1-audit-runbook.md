@@ -43,9 +43,11 @@ Both are changes to the organization. Both are recorded in `./audit-state/` as t
 ## Running with a team
 
 Several auditors can share one engagement, and the simplest arrangement is
-also the right one: **everybody works on the same branch.** Each run writes its
-own `audit-state/runs/<timestamp>/` directory, so two auditors auditing
-different projects never touch the same file. There is nothing to merge.
+also the right one: **everybody works on the same branch** — one per customer,
+`<customer>-gcp-ig1-audit`, set as `AUDIT_BRANCH` in `config/audit.env`. Each
+run writes its own `audit-state/runs/<timestamp>/` directory, so two auditors
+auditing different projects never touch the same file. There is nothing to
+merge, and who ran what is in the commits.
 
 Divide the estate by project and agree three things before anyone starts.
 
@@ -87,7 +89,7 @@ Day to day, three habits keep it painless:
 
 ### Set up your shell
 
-Follow [auditor setup](cis-ig1-auditor-setup.md) **steps 1–4**: tools, sign-in, the repository on your own branch, and the `ORG_ID`, `AUDIT_PROJECT` and `SA_EMAIL` variables. `jq` is not optional — about 45 checks need it.
+Follow [auditor setup](cis-ig1-auditor-setup.md) **steps 1–4**: tools, sign-in, the engagement branch, and the `ORG_ID`, `AUDIT_PROJECT` and `SA_EMAIL` variables. `jq` is not optional — about 45 checks need it.
 
 The API and service account steps below are once per engagement, run as yourself. If they are already done, go to setup steps 5–7 and then [Phase 2](#phase-2--establish-the-starting-position).
 
@@ -141,7 +143,7 @@ Every permission is read-only, including custom roles replacing predefined ones 
 
 **Enable the APIs before switching**, or as yourself — a new service account cannot enable services.
 
-- [ ] Shell set up and on your branch (setup steps 1–4)
+- [ ] Shell set up and on the engagement branch (setup steps 1–4)
 - [ ] `apis-enabled-by-audit.txt` written
 - [ ] Service account created
 - [ ] Token check prints the auditor service account (setup step 6)
