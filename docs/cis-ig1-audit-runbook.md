@@ -40,6 +40,53 @@ Both are changes to the organization. Both are recorded in `./audit-state/` as t
 
 ---
 
+## Running with a team
+
+Several auditors can share one engagement, and the simplest arrangement is
+also the right one: **everybody works on the same branch.** Each run writes its
+own `audit-state/runs/<timestamp>/` directory, so two auditors auditing
+different projects never touch the same file. There is nothing to merge.
+
+Divide the estate by project and agree three things before anyone starts.
+
+**One person runs the organization pass.** It is 86 checks at the organization
+node and the answer is the same whoever runs it. If all three run it you get
+three org reports and three sets of REVIEW decisions for the same questions,
+with no way to tell which is authoritative. Everyone else uses `--no-org`:
+
+```bash
+./run-audit.sh --no-org --project THEIR_PROJECT --out ./audit-state/runs
+```
+
+**Everyone shares one settings file.** `config/audit.env` holds the policy
+answers — approved registries, allowed locations, the exclusion pattern. If one
+auditor's copy differs by a single registry prefix, their project passes and
+fails on different criteria from everyone else's, and nothing in the output
+says so. Commit it once, at the start, and have the others pull rather than
+retype it. `config/projects.txt` matters the same way: it is the denominator
+the organization's coverage divides by, so it must be the whole estate rather
+than one auditor's share of it.
+
+Delete the marked block from `.gitignore` to allow both, once, before the team
+begins. The kit ships with results and settings ignored because the kit's own
+repository is public; an engagement repository is the opposite case.
+
+**One person compiles at the end**, after everybody has pushed. The
+organization-wide plan and score are single files regenerated from every run,
+so they are the one thing three people can genuinely conflict over. See
+[Phase 6b](#phase-6b--compile-the-plan).
+
+Day to day, three habits keep it painless:
+
+- `git config --global pull.rebase true`, then pull before every push. What you
+  will hit is a rejected push because someone else got there first, not a merge
+  conflict.
+- Add your own paths — `git add audit-state/runs/2026-09-22_10-14-33` — and
+  never `git add -A`. A blind add is how a live IAM inventory reached a public
+  repository twice.
+- Commit one project per commit and push as you finish it, rather than a batch
+  at the end. If a machine dies mid-engagement, the work already landed.
+
 ## Phase 1 — Prerequisites
 
 ### Set up your shell

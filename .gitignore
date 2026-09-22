@@ -57,19 +57,8 @@ $RECYCLE.BIN/
 /audit-run
 
 # ---------------------------------------------------------------------------
-# Audit output
+# Build artefacts
 # ---------------------------------------------------------------------------
-# Audit results ARE committed here — this repository is private and holds the
-# engagement's evidence alongside the tooling that produced it.
-#
-# What that means in practice: results name every public bucket, every
-# over-permissioned account, and every open firewall rule in the estate. Repo
-# access is therefore access to the findings, so keep the access list matched
-# to who should see them. If this repository is ever made public, forked, or
-# moved between organizations, the results go with it — git history outlives
-# the private setting.
-#
-# Only build artefacts and scratch files are ignored:
 audit-run.log
 *.cis.json
 
@@ -96,29 +85,32 @@ crash.log
 # operator resolves the same ones. It is small and contains no secrets.
 !**/.terraform.lock.hcl
 
-# Audit output names real projects, buckets and IAM principals.
-#
-# In a CUSTOMER's private engagement repository the results ARE committed —
-# that is the deliverable, and a finding should be reproducible from the
-# settings that produced it. DELETE THE NEXT LINE on the customer's side.
-#
-# In THIS repository — public, and the kit's own development — they are not.
-# Two accidents have already put a live IAM inventory in this history, both
-# from `git add -A` sweeping a directory nobody meant to commit.
-/audit-state/
-#
-# Nothing in this repository should ever hold a credential. Service account
-# keys in particular: the audit runs by impersonation precisely so that no key
-# exists, and committing one would break safeguard 5.2 — which this repository
-# exists to test.
+# ---------------------------------------------------------------------------
+# Credentials — NEVER delete these, in any repository
+# ---------------------------------------------------------------------------
+# The audit runs by impersonation precisely so that no service account key
+# exists. Committing one would break safeguard 5.2, which this kit measures.
 *.json.key
 *-key.json
 credentials.json
 service-account*.json
 
-# Settings are the auditor's own: the customer's project names, registry
-# paths and residency policy. The examples and the readme are committed so a
-# fresh clone knows what to fill in; the filled-in files are not.
+# ---------------------------------------------------------------------------
+# Results and settings
+# ---------------------------------------------------------------------------
+# >>> DELETE THIS WHOLE BLOCK IN A CUSTOMER ENGAGEMENT REPOSITORY >>>
+#
+# There, results are the deliverable and belong in git, and the settings are
+# shared by the whole audit team so that everyone scores against identical
+# criteria. See "Running with a team" in docs/cis-ig1-audit-runbook.md.
+#
+# Here, they are ignored. This repository is public and holds the kit's own
+# development. Audit output names real projects, buckets and IAM principals,
+# and a live IAM inventory has reached this history twice already — both times
+# from `git add -A` sweeping a directory nobody meant to commit.
+/audit-state/
 /config/*
 !/config/readme.md
 !/config/*.example
+#
+# <<< END OF THE BLOCK TO DELETE <<<

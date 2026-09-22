@@ -29,6 +29,8 @@ The audit runs as a read-only service account, impersonated and never keyed — 
 
 Audit one project at a time. The first run includes the organization pass; add `--no-org` for each project after that, so the organization's REVIEW checks are decided once rather than per project.
 
+Auditing with two or three people: share one branch, one settings file, and one organization pass — [Running with a team](docs/cis-ig1-audit-runbook.md#running-with-a-team).
+
 To run the passes one at a time instead of step 5, follow the [run sheet](docs/cis-ig1-run-sheet.md) from A8.
 
 Step 9 is not optional. A standing org-wide read identity fails safeguards 5.1, 5.4 and 6.2 — the controls this audit just measured.
