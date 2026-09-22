@@ -2,7 +2,7 @@
 #
 # Runs a complete CIS IG1 audit and files it into one dated directory:
 #
-#   <out>/2026-09-14_12-48-05/
+#   audit-state/runs/2026-09-14_12-48-05/
 #     report/                         what the auditor reads, in reading order
 #       01-remediation-plan.md
 #       02-organization/
@@ -30,7 +30,7 @@
 #
 # Settings come from config/audit.env — the organization, the service account
 # and the check inputs. Copy config/audit.env.example to start one.
-#   ./run-audit.sh --review scratch/runs/2026-09-14_12-58-20   # decide every REVIEW check
+#   ./run-audit.sh --review audit-state/runs/2026-09-14_12-58-20  # decide every REVIEW check
 #
 # A run leaves the REVIEW checks undecided, so its Completion is below 100%.
 # --review puts each one to the auditor, one at a time, for PASS or FAIL, then
@@ -62,7 +62,7 @@ Options
   --parallel N       Checks run at once (default 8). --parallel 1 runs them in order.
   --config FILE      Settings file (default: config/audit.env)
   --org ID           Organization ID (default: ORG_ID from the settings file, or $ORG_ID)
-  --out DIR          Where run directories are created (default: ./scratch/runs)
+  --out DIR          Where run directories are created (default: ./audit-state/runs)
   --no-org           Skip the organization pass (project passes only)
   -h, --help         This message
 
@@ -78,7 +78,7 @@ audit everything). They are listed in evidence/excluded.txt.
 USAGE
 }
 
-CONFIG="" ORG="${ORG_ID:-}" OUT="./scratch/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8 REVIEW_DIR=""
+CONFIG="" ORG="${ORG_ID:-}" OUT="./audit-state/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8 REVIEW_DIR=""
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in

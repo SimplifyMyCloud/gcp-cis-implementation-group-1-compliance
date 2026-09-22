@@ -55,7 +55,7 @@ three org reports and three sets of REVIEW decisions for the same questions,
 with no way to tell which is authoritative. Everyone else uses `--no-org`:
 
 ```bash
-./run-audit.sh --no-org --project THEIR_PROJECT --out ./audit-state/runs
+./run-audit.sh --no-org --project THEIR_PROJECT
 ```
 
 **Everyone shares one settings file.** `config/audit.env` holds the policy

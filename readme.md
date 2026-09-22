@@ -37,7 +37,7 @@ Step 9 is not optional. A standing org-wide read identity fails safeguards 5.1, 
 
 ## Settings
 
-Everything you have to decide lives in [`config/`](config/readme.md), and nothing else does. Output goes to `audit-state/runs/` or `scratch/runs/`, kept apart on purpose: clearing out old runs must never cost you your configuration.
+Everything you have to decide lives in [`config/`](config/readme.md), and nothing else does. Output goes to `audit-state/runs/`, kept apart on purpose: clearing out old runs must never cost you your configuration.
 
 ```bash
 cp config/audit.env.example config/audit.env     # then fill it in
@@ -57,9 +57,9 @@ Only the `.example` files are committed. The filled-in ones are gitignored — t
 Runs every automated check for the organization and the projects you name, then files the results into one dated directory. Run it once steps 1–4 are done:
 
 ```bash
-./run-audit.sh --out ./audit-state/runs --all                            # every ACTIVE project
-./run-audit.sh --out ./audit-state/runs --project PROJECT                # repeatable
-./run-audit.sh --out ./audit-state/runs --projects config/projects.txt   # one ID per line
+./run-audit.sh --all                            # every ACTIVE project
+./run-audit.sh --project PROJECT                # repeatable
+./run-audit.sh --projects config/projects.txt   # one ID per line
 ```
 
 No `--config` and no `--org`: both come from `config/audit.env`. Pass `--config FILE` only to use a different settings file.
@@ -92,7 +92,7 @@ audit-state/runs/2026-09-14_12-58-20/
     audit.env  targets.txt  run.log  iam-inventory.txt  excluded.txt  not-found.txt
 ```
 
-**It exits non-zero only if a pass is `UNRELIABLE`, `DEGRADED` or wrote nothing.** Failed checks are findings, not a broken run. `--skip V96` leaves out a check that hangs (reported as SKIP), and `--parallel 1` runs checks one at a time, in order. Without `--out`, runs go to `./scratch/runs/`, which is git-ignored and so never committed.
+**It exits non-zero only if a pass is `UNRELIABLE`, `DEGRADED` or wrote nothing.** Failed checks are findings, not a broken run. `--skip V96` leaves out a check that hangs (reported as SKIP), and `--parallel 1` runs checks one at a time, in order. `--out DIR` puts the run somewhere other than `./audit-state/runs`.
 
 ### The score and `--review`
 

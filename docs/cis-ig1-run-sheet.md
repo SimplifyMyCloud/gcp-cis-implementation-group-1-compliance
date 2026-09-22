@@ -89,7 +89,7 @@ Everything from A8 to C2 in one step, filed into a dated run directory under `au
 
 ```bash
 gcloud projects list --format="value(projectId)" | sort > ./audit-state/projects.txt   # edit to taste
-./run-audit.sh --org "$ORG_ID" --out ./audit-state/runs \
+./run-audit.sh \
   --projects ./audit-state/projects.txt
 ```
 

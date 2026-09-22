@@ -2,7 +2,7 @@
 
 Everything the audit needs you to decide lives here, and nothing else does.
 
-Output goes elsewhere — `scratch/runs/` by default — so clearing a directory
+Output goes elsewhere — `audit-state/runs/` — so clearing a directory
 full of old runs never costs you your configuration. That separation is the
 point of this directory.
 

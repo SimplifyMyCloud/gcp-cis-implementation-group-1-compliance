@@ -189,7 +189,7 @@ gcloud projects list --filter='lifecycleState:ACTIVE' --format='value(projectId)
 The CLI is ready. Run the audit with output pointed at `audit-state/runs`:
 
 ```bash
-./run-audit.sh --out ./audit-state/runs --all
+./run-audit.sh --all
 ```
 
 Use `--project ID` (repeatable) or `--projects FILE` in place of `--all` to audit a subset. See [cis-ig1-scripted-audit.md](cis-ig1-scripted-audit.md) for the options.
@@ -360,7 +360,7 @@ git switch main && git pull && git switch "$(whoami)/cis-ig1-audit" && git merge
 ```
 
 ```bash
-./run-audit.sh --out ./audit-state/runs --all
+./run-audit.sh --all
 ```
 
 Then commit as in [step 8](#8-run-and-commit), and `audit-off` or close the tab. Step 7 is needed only on the first run of an engagement, and step 2 only when the session has expired.

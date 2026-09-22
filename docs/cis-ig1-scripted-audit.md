@@ -29,7 +29,7 @@ Created in [setup step 7](cis-ig1-auditor-setup.md#7-settings-then-the-output-di
 In one command — org pass, project passes, rollup and score, filed into `audit-state/runs/<date_time>/report/` and `evidence/`:
 
 ```bash
-./run-audit.sh --org "$ORG_ID" --out ./audit-state/runs --projects projects.txt   # or --project ID / --all
+./run-audit.sh --projects config/projects.txt   # or --project ID / --all
 ```
 
 The run finishes with REVIEW checks undecided. Decide them, one at a time, then read the three numbers at the top of each report — Completion, Pass, Fail:
