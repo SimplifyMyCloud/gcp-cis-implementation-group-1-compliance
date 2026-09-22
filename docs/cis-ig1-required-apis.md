@@ -119,9 +119,9 @@ project, the pack's "Not applicable" table names it.
 | `websecurityscanner.googleapis.com` | V124 | ListScanConfigs | metrics; run 3 error named the audited project |
 | `gkebackup.googleapis.com` | V156 | not called (no GKE clusters) | not observed |
 
-To exercise these checks, the test enabled them in the disposable target project. The list is in
-`scratch/teardown/test-infra/yamato-apis-enabled-by-test.txt` for teardown. In a customer audit, don't enable
-them.
+To exercise these checks, the validation run enabled them in a disposable target project and recorded
+the list so teardown could disable exactly those. In a customer audit, don't enable them: a check whose
+product is absent is correctly N/A, which counts as a pass.
 
 In run 8, V116 briefly came back N/A with `osconfig.googleapis.com not enabled` about 20 minutes
 after the API was enabled. The same call succeeded on retry: this was propagation delay, not a

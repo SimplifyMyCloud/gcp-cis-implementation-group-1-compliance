@@ -107,7 +107,8 @@ audit-state/runs/2026-09-14_12-58-20/
     04-compliance-score.json
     remediation-plan.csv         import into the tracker
   evidence/
-    audit.env  targets.txt  run.log  iam-inventory.txt  not-found.txt
+    results/                     each pass's results and review decisions
+    audit.env  targets.txt  run.log  iam-inventory.txt  excluded.txt  not-found.txt
 ```
 
 Then decide every REVIEW check PASS or FAIL. Completion in each report reaches 100% when the last is decided:

@@ -50,7 +50,9 @@ cp config/projects.txt.example config/projects.txt   # optional
 ./run-audit.sh --project some-project-id
 ```
 
-Only the `.example` files are committed. The filled-in ones are gitignored — they hold the customer's project naming, registries and residency policy, which are theirs to publish rather than yours. [`config/readme.md`](config/readme.md) is the full reference, including why `none` is an answer and blank is not.
+In **this** repository only the `.example` files are committed, because it is public. In a **customer engagement repository the filled-in files belong in git** — one shared settings file is what keeps a team of auditors scoring against identical criteria, and the results are the deliverable. Deleting one marked block from `.gitignore` allows both: see [Running with a team](docs/cis-ig1-audit-runbook.md#running-with-a-team) and [setup step 8](docs/cis-ig1-auditor-setup.md#8-run-and-commit).
+
+[`config/readme.md`](config/readme.md) is the full reference, including why `none` is an answer and blank is not.
 
 ## run-audit.sh — the whole audit in one command
 
@@ -221,7 +223,7 @@ Requirements can be `Not started`, `In progress`, `PR submitted`, `Compliant`, o
 
 That is deliberate and worth protecting. These run inside a customer's environment, and "install these modules first" is a conversation you do not want to have there. Where a dependency would buy convenience — writing `.xlsx` directly rather than emitting CSV, for instance — **take the CSV and the three clicks.**
 
-Each file carries `//go:build ignore` so several `package main` files can share a directory without colliding under `go vet ./...`. Audit results are committed to this repository, which is private.
+Each file carries `//go:build ignore` so several `package main` files can share a directory without colliding under `go vet ./...`.
 
 ---
 

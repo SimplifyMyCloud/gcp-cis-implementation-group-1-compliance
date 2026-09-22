@@ -186,7 +186,7 @@ gcloud projects list --filter='lifecycleState:ACTIVE' --format='value(projectId)
 
 ### 8. Run and commit
 
-The CLI is ready. Run the audit with output pointed at `audit-state/runs`:
+The CLI is ready. Runs land in `audit-state/runs/<timestamp>/`, one directory per run:
 
 ```bash
 ./run-audit.sh --all
@@ -203,13 +203,21 @@ The run ends by printing a `--review` command. Run it to decide each REVIEW chec
 Commit the results to your branch and push.
 
 **First, on the engagement repository only, allow it.** The kit ships with
-`/audit-state/` gitignored, because the kit's own repository is public and
-audit output names real projects, buckets and IAM principals. In the
-customer's private repository the results are the deliverable, so delete that
-line from `.gitignore` once, on your first run:
+results *and* settings gitignored, because the kit's own repository is public
+and audit output names real projects, buckets and IAM principals. In the
+customer's private repository both belong in git: the results are the
+deliverable, and one shared `config/audit.env` is what keeps a team of
+auditors scoring against identical criteria. Delete the marked block from
+`.gitignore` once, on your first run:
 
 ```bash
-sed -i.bak '\|^/audit-state/$|d' .gitignore && rm -f .gitignore.bak
+sed -i.bak '/^# >>> DELETE THIS WHOLE BLOCK/,/^# <<< END OF THE BLOCK TO DELETE/d' .gitignore && rm -f .gitignore.bak
+```
+
+Check it took effect — both paths should come back committable:
+
+```bash
+git check-ignore -v config/audit.env audit-state/runs || echo "both committable"
 ```
 
 Then:
