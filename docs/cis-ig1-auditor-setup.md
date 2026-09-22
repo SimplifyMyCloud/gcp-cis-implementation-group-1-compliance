@@ -51,7 +51,20 @@ When you see that, run `gcloud auth login` and start the interrupted pass again.
 
 Application Default Credentials (`gcloud auth application-default login`) are **not** needed. The audit calls `gcloud` and nothing else.
 
-### 3. Get the repository and create your branch
+### 3. Be on your branch
+
+You already have the repository: cloning it is a one-time job per machine, folded away below. Cloud Shell keeps your home directory between sessions, so the clone, your SSH key and your `gh` credentials all survive there too.
+
+Move to your own branch and pick up whatever landed on `main` since you were last here:
+
+```bash
+git switch "$(whoami)/cis-ig1-audit" && git pull && git merge main
+```
+
+Merge rather than rebase. The branch holds committed results, and a rebase rewrites commits that may already be pushed.
+
+<details>
+<summary><strong>First time on this machine</strong> — credentials, clone, branch</summary>
 
 Cloud Shell needs GitHub credentials to clone a private repository. Use the GitHub CLI if it is present:
 
@@ -69,33 +82,19 @@ ssh-keygen -t ed25519 -C "$(gcloud config get-value account)"
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Clone and branch from an up-to-date `main`. Name the branch after yourself:
+Clone, then branch from an up-to-date `main`. Name the branch after yourself:
 
 ```bash
-git clone git@github.com:CUSTOMER_ORG/CUSTOMER_REPO.git
+git clone git@github.com:CUSTOMER_ORG/CUSTOMER_REPO.git && cd CUSTOMER_REPO
 ```
 
 ```bash
-cd CUSTOMER_REPO
-```
-
-```bash
-git switch main && git pull
-```
-
-```bash
-git switch -c "$(whoami)/cis-ig1-audit"
+git switch main && git pull && git switch -c "$(whoami)/cis-ig1-audit"
 ```
 
 `whoami` in Cloud Shell is your account name without the domain, so `dana@acme.com` gets `dana/cis-ig1-audit`. Type the name yourself if you work locally under a different user.
 
-**Coming back to an existing branch** on a later day, pick up whatever changed on `main` since:
-
-```bash
-git switch "$(whoami)/cis-ig1-audit" && git pull && git merge main
-```
-
-Merge rather than rebase. The branch holds committed results, and a rebase rewrites commits that may already be pushed.
+</details>
 
 ### 4. Set the variables
 
