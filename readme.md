@@ -189,6 +189,7 @@ Do not edit `run-audit.sh` while it is running. Bash reads a script as it goes, 
 | [`terraform/`](terraform/) | The read-only audit service account. |
 | [`gcloud/`](gcloud/) | Same account via shell scripts, where Terraform is unavailable. |
 | [`docs/cis-ig1-required-apis.md`](docs/cis-ig1-required-apis.md) | The 17 APIs the audit host project needs, and why each one. |
+| [`docs/known-issues.md`](docs/known-issues.md) | What the kit gets wrong, with the workaround that finishes the audit anyway. |
 
 ## The numbers
 
