@@ -106,10 +106,14 @@ type result struct {
 	output   string
 	errText  string
 	duration time.Duration
-	// Set when an auditor decided a REVIEW check with -decide. v then holds
-	// the auditor's verdict; the machine's REVIEW is kept in the saved state.
-	reviewedBy string
-	reviewedAt string
+	// Set when an auditor decided a check with -decide. v then holds the
+	// auditor's verdict, and machineVerdict what the run itself reached —
+	// REVIEW when it ran and could not judge, or ERROR, DENIED or SKIP when
+	// it could not answer at all. The report states both, so nobody mistakes
+	// a human's call for a clean machine result.
+	reviewedBy     string
+	reviewedAt     string
+	machineVerdict verdict
 }
 
 var (
@@ -1386,9 +1390,9 @@ func renderAutomated(rs []result) string {
 		}
 		if r.reviewedBy != "" {
 			machine := r
-			machine.v = vReview
-			fmt.Fprintf(&a, "**Why %s:** decided by the auditor on review — %s, %s. The machine's verdict was REVIEW: %s\n\n",
-				r.v.label(), r.reviewedBy, r.reviewedAt, why(machine))
+			machine.v = r.machineVerdict
+			fmt.Fprintf(&a, "**Why %s:** decided by the auditor on review — %s, %s. The machine's verdict was %s: %s\n\n",
+				r.v.label(), r.reviewedBy, r.reviewedAt, r.machineVerdict.label(), why(machine))
 		} else {
 			fmt.Fprintf(&a, "**Why %s:** %s\n\n", r.v.label(), why(r))
 		}
@@ -1746,6 +1750,10 @@ func pct(n, of int) int {
 // percents gives the three numbers. Completion and Pass round down — neither
 // may overstate — and Fail is the remainder of the completed share, so Pass +
 // Fail always equals Completion instead of drifting a point short.
+// outstanding is every check still waiting on the auditor: REVIEW, plus the
+// blocked ones the machine could not answer.
+func (s score) outstanding() int { return s.undecided + s.blocked }
+
 func (s score) percents() (completion, pass, fail int) {
 	completion = pct(s.pass+s.fail, s.total)
 	pass = pct(s.pass, s.total)
@@ -1767,7 +1775,8 @@ func writeScore(a *strings.Builder, rs []result) {
 		done += fmt.Sprintf(" **%d REVIEW** await the auditor: `./run-audit.sh --review <run directory>`.", s.undecided)
 	}
 	if s.blocked > 0 {
-		done += fmt.Sprintf(" **%d** did not run (SKIP, ERROR or DENIED) — fix and re-run.", s.blocked)
+		done += fmt.Sprintf(" **%d** did not run (SKIP, ERROR or DENIED) — re-run them, or decide them"+
+			" on review once you have verified the requirement another way.", s.blocked)
 	}
 	c, p, f := s.percents()
 	fmt.Fprintf(a, "| **Completion** | **%d%%** | %s |\n", c, done)
@@ -1887,14 +1896,16 @@ func applyDecisions(st runState) []result {
 			output: sr.Output, errText: sr.ErrText}
 		if isXref(r.check) {
 			r.v, r.output, r.errText = vXref, "", ""
-		} else if d, ok := st.Decisions[r.id]; ok && r.v == vReview {
+		} else if d, ok := st.Decisions[r.id]; ok && undecidable(r.v) {
+			r.machineVerdict = r.v
 			r.v, r.reviewedBy, r.reviewedAt = verdictFromLabel(d.Verdict), d.By, d.At
 		}
 		rs = append(rs, r)
 	}
 	resolveXrefs(rs)
 	for i := range rs {
-		if d, ok := st.Decisions[rs[i].id]; ok && isXref(rs[i].check) && rs[i].v == vReview {
+		if d, ok := st.Decisions[rs[i].id]; ok && isXref(rs[i].check) && undecidable(rs[i].v) {
+			rs[i].machineVerdict = rs[i].v
 			rs[i].v, rs[i].reviewedBy, rs[i].reviewedAt = verdictFromLabel(d.Verdict), d.By, d.At
 		}
 	}
@@ -1904,10 +1915,23 @@ func applyDecisions(st runState) []result {
 // nextUndecided returns the next REVIEW to put to the auditor: checks with a
 // command of their own first, in V order, then any cross-reference still
 // REVIEW once those are settled.
+// blocked reports whether the machine failed to reach a verdict — the check
+// did not run, or ran and could not answer. These are as undecided as a
+// REVIEW is: the requirement is unverified until a human says otherwise, and
+// re-running is not always possible on the day (a quota, a propagation delay,
+// an API enabled mid-run). The auditor decides them with the failure in view,
+// and the machine's verdict and error text are kept in the report underneath.
+func blocked(v verdict) bool {
+	return v == vSkip || v == vDenied || v == vError
+}
+
+// undecidable is every verdict the auditor may rule on.
+func undecidable(v verdict) bool { return v == vReview || blocked(v) }
+
 func nextUndecided(rs []result, passed map[string]bool) *result {
 	for _, xref := range []bool{false, true} {
 		for i := range rs {
-			if rs[i].v == vReview && isXref(rs[i].check) == xref && !passed[rs[i].id] {
+			if undecidable(rs[i].v) && isXref(rs[i].check) == xref && !passed[rs[i].id] {
 				return &rs[i]
 			}
 		}
@@ -1955,7 +1979,7 @@ func runDecide(statePath, mdPath string) int {
 	passed := map[string]bool{} // skipped for now, this session only
 	rs := applyDecisions(st)
 
-	fmt.Printf("\nReview — %s · %d undecided\n", st.Target, scoreOf(rs).undecided)
+	fmt.Printf("\nReview — %s · %d undecided\n", st.Target, scoreOf(rs).outstanding())
 	fmt.Printf("Decided by %s. Answers are saved as you go; q quits, and running this again resumes.\n", who)
 
 	for {
@@ -1964,8 +1988,12 @@ func runDecide(statePath, mdPath string) int {
 			break
 		}
 		fmt.Printf("\n%s\n", strings.Repeat("═", 78))
-		fmt.Printf("%s  REVIEW  %s  %s      [%d left]\n", r.id, r.ref, r.title, scoreOf(rs).undecided-len(passed))
+		fmt.Printf("%s  %-6s %s  %s      [%d left]\n", r.id, r.v.label(), r.ref, r.title,
+			scoreOf(rs).outstanding()-len(passed))
 		fmt.Printf("Pass if: %s\n", r.criteria)
+		if blocked(r.v) && r.errText != "" {
+			fmt.Printf("%s\n%s said:\n%s\n", strings.Repeat("─", 78), r.v.label(), truncate(r.errText, 600))
+		}
 		fmt.Printf("%s\n", strings.Repeat("─", 78))
 		body := r.output
 		if body == "" {
@@ -2066,8 +2094,8 @@ func finishDecide(statePath, mdPath string, rs []result) int {
 	}
 	s := scoreOf(rs)
 	fmt.Printf("\n%s — %s\n", auditTarget, s.line())
-	if s.undecided > 0 {
-		fmt.Printf("%d REVIEW still undecided. Run the review again to continue.\n", s.undecided)
+	if s.outstanding() > 0 {
+		fmt.Printf("%d check(s) still undecided. Run the review again to continue.\n", s.outstanding())
 	}
 	fmt.Printf("Report: %s\n", mdPath)
 	return 0
