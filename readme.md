@@ -158,6 +158,45 @@ At organization scope the document also carries `coverage`, and `score.completio
 
 Do not edit `run-audit.sh` while it is running. Bash reads a script as it goes, so the change corrupts the run in progress.
 
+## The two headline numbers
+
+Two questions the engagement reports, and they need different inputs.
+
+**How much of the estate is audited** comes from the runs alone — `rollup.go` already answers it, with `config/projects.txt` as the denominator.
+
+**How many IG1 safeguards pass** needs more than the runs. A safeguard passes only when *every* requirement under it is satisfied, and of the 290 requirements only 188 carry an automated check. The other 102 have no command that can answer them. Twelve IG1 safeguards have no GCP surface at all — training, end-user devices, removable media — and are owned outside the platform team entirely.
+
+So the auditor answers those once, in an interview:
+
+```bash
+go run compliance-report.go -interview audit-state/manual-answers.json
+```
+
+114 questions — the 102 manual requirements and the 12 off-platform safeguards — each a yes or no, saved as you go and resumable with `q`. No evidence is captured there; attach it to the engagement record yourself.
+
+Then the report joins the runs, the answers and the checklist:
+
+```bash
+go run compliance-report.go -runs audit-state/runs \
+  -answers audit-state/manual-answers.json \
+  -projects config/projects.txt \
+  -safeguards-md audit-state/safeguards.md \
+  -safeguards-json audit-state/safeguards.json
+```
+
+```
+> **SAFEGUARDS: 25% — 14 of 56 passing**
+> **PROJECTS: 0% audited (0 of 44) · 0% passing (0 of 44)**
+```
+
+Three things worth knowing about those numbers:
+
+- **56 is the honest denominator**, because the 12 off-platform safeguards are answered rather than dropped. The report also gives the 44 GCP-actionable subset, so you can present either.
+- **Projects are counted twice.** *Audited* is coverage — every check reached a final verdict. *Passing* is stricter: audited, and nothing failed. A slide showing one and labelling it the other is the easiest mistake to make here.
+- **Unanswered is not failing.** A safeguard with an outstanding REVIEW or an unasked manual requirement cannot be scored, and the report says so by name rather than counting it against the customer.
+
+CIS sets no partial credit — IG1 is "implement every safeguard" — so the percentage is progress, not a compliance claim. Report it as such.
+
 ## The scripts
 
 | Script | Role | Run by |
@@ -165,7 +204,7 @@ Do not edit `run-audit.sh` while it is running. Bash reads a script as it goes, 
 | [`run-audit.sh`](run-audit.sh) | The whole audit in one command: org pass, project passes, rollup, score, filed into one dated directory. Reads [`config/audit.env`](config/readme.md) for the organization and the check inputs, so it needs no flags but a target | Auditor |
 | [`audit-run.go`](audit-run.go) | The check engine. Reads the checks straight from [`docs/cis-ig1-cli-validation.md`](docs/cis-ig1-cli-validation.md) — the document is the single source, with no second copy to drift — runs them in parallel, scores each one, and writes a pack of results. `-list` shows what would run, `-only` runs a subset, `-init-config` writes a fresh `config/audit.env` | Auditor, directly or through `run-audit.sh` |
 | [`rollup.go`](rollup.go) | Reads every pack and pivots on the finding rather than the project: one org policy fix is one row, not 105. Also writes the compliance score, as markdown and as JSON. Point `-in` at one run directory for that project's score, or at the directory holding every run for the organization's | `run-audit.sh`, or by hand |
-| [`compliance-report.go`](compliance-report.go) | Scores the **checklist**, not a run: not started, PR submitted (and how long it has waited for approval), compliant. `--update` syncs Status lines to the checkboxes. Used while remediation is under way, after the audit | Auditor, as remediation progresses |
+| [`compliance-report.go`](compliance-report.go) | Owns **what can we claim**. `-interview` puts every requirement no command can answer to the auditor; `-safeguards-md` / `-safeguards-json` then join the runs, those answers and the checklist into the two headline numbers. Also scores the checklist's own checkboxes for remediation tracking, with `--update` to sync the Status lines | Auditor |
 | [`gcloud/create.sh`](gcloud/create.sh) | Creates the audit service account, its three custom roles and its org bindings without Terraform. Writes `audit-sa-record.txt`, the record teardown needs | Admin |
 | [`gcloud/verify.sh`](gcloud/verify.sh) | Confirms the identity is exactly as intended — no keys, no write verbs, the expected bindings — and after teardown, that nothing remains | Admin |
 | [`gcloud/destroy.sh`](gcloud/destroy.sh) | Removes everything `create.sh` made, from its record | Admin |

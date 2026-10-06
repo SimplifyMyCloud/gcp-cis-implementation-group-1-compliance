@@ -29,9 +29,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -63,7 +67,13 @@ type requirement struct {
 	pr      string
 	raised  time.Time
 	hasDate bool
+	// vnum is the automated check that answers this requirement, e.g. "V27",
+	// taken from the link the checklist already carries. Empty means no
+	// command can answer it: the auditor does, in the interview.
+	vnum string
 }
+
+func (r requirement) manual() bool { return r.vnum == "" }
 
 type safeguard struct {
 	id           string
@@ -128,13 +138,21 @@ var (
 	reStatus    = regexp.MustCompile(`^\*\*Status:\*\*`)
 	reReq       = regexp.MustCompile(`^- \[([ xX])\] (.+)$`)
 	rePR        = regexp.MustCompile("`(PR #[\\w.-]+)(?:\\s+(\\d{4}-\\d{2}-\\d{2}))?`")
+	reVLink     = regexp.MustCompile(`\[(V\d+)\]\(`)
+	reExcluded  = regexp.MustCompile(`^\| (\d+\.\d+) \| ([^|]+?) \| ([^|]+?) \|$`)
 )
 
 func main() {
 	var (
-		path   = flag.String("file", "docs/cis-ig1-gcp-checklist.md", "checklist to score")
-		update = flag.Bool("update", false, "rewrite Status lines to match requirement boxes")
-		format = flag.String("format", "text", "text | md")
+		path      = flag.String("file", "docs/cis-ig1-gcp-checklist.md", "checklist to score")
+		update    = flag.Bool("update", false, "rewrite Status lines to match requirement boxes")
+		format    = flag.String("format", "text", "text | md")
+		interview = flag.String("interview", "", "put every unanswered manual requirement to the auditor, saving answers here")
+		runs      = flag.String("runs", "", "directory of audit runs, for the automated verdicts")
+		answers   = flag.String("answers", "", "the manual answers file written by -interview")
+		sgMD      = flag.String("safeguards-md", "", "write the safeguard compliance report here")
+		sgJSON    = flag.String("safeguards-json", "", "write the same, as JSON for the dashboard")
+		projList  = flag.String("projects", "", "the organization's project list — the denominator for project coverage")
 	)
 	flag.Parse()
 
@@ -148,6 +166,65 @@ func main() {
 	if len(safeguards) == 0 {
 		fmt.Fprintln(os.Stderr, "compliance-report: no safeguards found — is this the right file?")
 		os.Exit(2)
+	}
+	excludedSGs := parseExcluded(lines)
+
+	if *interview != "" {
+		os.Exit(runInterview(*interview, safeguards, excludedSGs))
+	}
+
+	if *sgMD != "" || *sgJSON != "" {
+		auto := map[string]verdict3{}
+		var projects []projectStatus
+		if *runs != "" {
+			a, p, rerr := loadRuns(*runs)
+			if rerr != nil {
+				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", rerr)
+				os.Exit(2)
+			}
+			auto, projects = a, p
+		}
+		af := answerFile{Answers: map[string]answer{}}
+		if *answers != "" {
+			loaded, aerr := loadAnswers(*answers)
+			if aerr != nil {
+				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", aerr)
+				os.Exit(2)
+			}
+			af = loaded
+		}
+		total := 0
+		if *projList != "" {
+			n, perr := countProjects(*projList)
+			if perr != nil {
+				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", perr)
+				os.Exit(2)
+			}
+			total = n
+		}
+		doc := buildSafeguards(safeguards, excludedSGs, auto, af, projects, total)
+		if *sgJSON != "" {
+			b, jerr := json.MarshalIndent(doc, "", "  ")
+			if jerr != nil {
+				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", jerr)
+				os.Exit(2)
+			}
+			if werr := os.WriteFile(*sgJSON, append(b, '\n'), 0o644); werr != nil {
+				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", werr)
+				os.Exit(2)
+			}
+		}
+		if *sgMD != "" {
+			if werr := os.WriteFile(*sgMD, []byte(renderSafeguards(doc)), 0o644); werr != nil {
+				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", werr)
+				os.Exit(2)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "safeguards %d%% (%d/%d) · projects %d%% audited (%d/%d), %d%% passing (%d/%d)\n",
+			doc.Safeguards.Pct, doc.Safeguards.Pass, doc.Safeguards.Total,
+			doc.Projects.PctAudited, doc.Projects.Audited, doc.Projects.Total,
+			doc.Projects.PctPassing, doc.Projects.Passing, doc.Projects.Total)
+		return
 	}
 
 	if *update {
@@ -218,7 +295,10 @@ func parse(lines []string) ([]safeguard, []string) {
 		}
 
 		if m := reReq.FindStringSubmatch(ln); m != nil {
-			r := requirement{text: strings.TrimSpace(m[2])}
+			r := requirement{text: reqText(m[2])}
+			if vm := reVLink.FindStringSubmatch(ln); vm != nil {
+				r.vnum = vm[1]
+			}
 			checked := m[1] == "x" || m[1] == "X"
 
 			if pm := rePR.FindStringSubmatch(ln); pm != nil {
@@ -506,4 +586,614 @@ func readLines(path string) ([]string, error) {
 
 func writeLines(path string, lines []string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+}
+
+// ---------------------------------------------------------------------------
+// Safeguard compliance — the two numbers the engagement reports
+// ---------------------------------------------------------------------------
+//
+// A safeguard passes when every requirement under it is satisfied. 188 of the
+// 290 requirements carry an automated check and are answered by a run; the
+// other 102 have no command that can answer them and are answered by the
+// auditor, once, in the interview. Twelve IG1 safeguards have no GCP surface
+// at all — training, end-user devices, removable media — and are answered the
+// same way, so the denominator can honestly be 56 rather than 44.
+//
+//	go run compliance-report.go -interview audit-state/manual-answers.json
+//	go run compliance-report.go -runs audit-state/runs \
+//	  -answers audit-state/manual-answers.json \
+//	  -safeguards-md audit-state/safeguards.md \
+//	  -safeguards-json audit-state/safeguards.json \
+//	  -projects config/projects.txt
+
+type verdict3 int
+
+const (
+	vcOpen verdict3 = iota // nobody has answered, or the machine could not
+	vcPass
+	vcFail
+)
+
+func (v verdict3) String() string {
+	switch v {
+	case vcPass:
+		return "pass"
+	case vcFail:
+		return "fail"
+	}
+	return "open"
+}
+
+// worse keeps the more serious of two verdicts. A requirement answered PASS in
+// five projects and FAIL in two is a FAIL: the estate does not satisfy it.
+func worse(a, b verdict3) verdict3 {
+	if a == vcFail || b == vcFail {
+		return vcFail
+	}
+	if a == vcOpen || b == vcOpen {
+		return vcOpen
+	}
+	return vcPass
+}
+
+// excluded is one of the twelve IG1 safeguards with no GCP surface.
+type excluded struct {
+	id, title, owner string
+}
+
+// parseExcluded reads Appendix A. These are part of the enterprise's IG1
+// obligation whoever owns them, so they belong in the denominator.
+func parseExcluded(lines []string) []excluded {
+	var out []excluded
+	in := false
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "## Appendix A") {
+			in = true
+			continue
+		}
+		if in && strings.HasPrefix(ln, "## Appendix") {
+			break
+		}
+		if !in {
+			continue
+		}
+		if m := reExcluded.FindStringSubmatch(ln); m != nil {
+			id := strings.TrimSpace(m[1])
+			if id == "Safeguard" {
+				continue
+			}
+			out = append(out, excluded{id, strings.TrimSpace(m[2]), strings.TrimSpace(m[3])})
+		}
+	}
+	return out
+}
+
+// reqKey identifies a requirement across runs of this tool. The checklist
+// carries no requirement IDs, so the key is its safeguard plus a hash of its
+// text: stable when requirements are reordered, and deliberately invalidated
+// when the text itself is edited, because the answer was to the old wording.
+func reqKey(sg, text string) string {
+	sum := sha256.Sum256([]byte(strings.Join(strings.Fields(text), " ")))
+	return fmt.Sprintf("%s/%x", sg, sum[:4])
+}
+
+type answer struct {
+	Key       string `json:"key"`
+	Safeguard string `json:"safeguard"`
+	Text      string `json:"text"`
+	Verdict   string `json:"verdict"` // pass | fail
+	By        string `json:"by"`
+	At        string `json:"at"`
+}
+
+type answerFile struct {
+	Schema  string            `json:"schema"`
+	Answers map[string]answer `json:"answers"`
+}
+
+func loadAnswers(path string) (answerFile, error) {
+	af := answerFile{Schema: "cis-ig1-manual-answers/1", Answers: map[string]answer{}}
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return af, nil
+	}
+	if err != nil {
+		return af, err
+	}
+	if err := json.Unmarshal(raw, &af); err != nil {
+		return af, err
+	}
+	if af.Answers == nil {
+		af.Answers = map[string]answer{}
+	}
+	return af, nil
+}
+
+// saveAnswers writes via a temporary file and renames, so an interrupted save
+// cannot leave a half-written file where the answers used to be.
+func saveAnswers(path string, af answerFile) error {
+	b, err := json.MarshalIndent(af, "", "  ")
+	if err != nil {
+		return err
+	}
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// ---------------------------------------------------------------------------
+// Automated verdicts, read back from the runs
+// ---------------------------------------------------------------------------
+
+type savedRun struct {
+	Target  string `json:"Target"`
+	Scope   string `json:"Scope"`
+	Results []struct {
+		ID      string `json:"ID"`
+		Verdict string `json:"Verdict"`
+	} `json:"Results"`
+	Decisions map[string]struct {
+		Verdict string `json:"Verdict"`
+	} `json:"Decisions"`
+}
+
+type projectStatus struct {
+	name     string
+	complete bool // every check reached a final verdict
+	passing  bool // complete, and nothing failed
+}
+
+// loadRuns walks a directory of runs and returns the worst verdict seen for
+// each check, plus per-project status. The newest file for a target wins, the
+// same rule rollup.go applies: a target audited twice is counted once.
+func loadRuns(root string) (map[string]verdict3, []projectStatus, error) {
+	type found struct {
+		path string
+		mod  int64
+	}
+	newest := map[string]found{}
+	err := filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() || !strings.HasSuffix(path, ".json") {
+			return nil
+		}
+		if !strings.Contains(filepath.ToSlash(path), "/evidence/results/") {
+			return nil
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		if prev, ok := newest[name]; !ok || fi.ModTime().Unix() > prev.mod {
+			newest[name] = found{path, fi.ModTime().Unix()}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	verdicts := map[string]verdict3{}
+	var projects []projectStatus
+	names := make([]string, 0, len(newest))
+	for n := range newest {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		raw, rerr := os.ReadFile(newest[name].path)
+		if rerr != nil {
+			continue
+		}
+		var run savedRun
+		if json.Unmarshal(raw, &run) != nil {
+			continue
+		}
+		st := projectStatus{name: name, complete: true, passing: true}
+		for _, r := range run.Results {
+			label := r.Verdict
+			// An auditor's decision stands in for whatever the machine reached,
+			// exactly as the report renders it.
+			if d, ok := run.Decisions[r.ID]; ok && d.Verdict != "" {
+				label = d.Verdict
+			}
+			var v verdict3
+			switch strings.ToUpper(label) {
+			case "PASS", "N/A", "NA":
+				v = vcPass
+			case "FAIL":
+				v = vcFail
+			case "XREF":
+				continue // resolved from whatever it points at
+			default: // REVIEW, SKIP, ERROR, DENIED
+				v = vcOpen
+			}
+			if v == vcFail {
+				st.passing = false
+			}
+			if v == vcOpen {
+				st.complete, st.passing = false, false
+			}
+			if prev, ok := verdicts[r.ID]; ok {
+				verdicts[r.ID] = worse(prev, v)
+			} else {
+				verdicts[r.ID] = v
+			}
+		}
+		if run.Scope == "project" {
+			projects = append(projects, st)
+		}
+	}
+	return verdicts, projects, nil
+}
+
+// ---------------------------------------------------------------------------
+// The interview: every requirement no command can answer
+// ---------------------------------------------------------------------------
+
+// runInterview puts each unanswered manual requirement to the auditor, saving
+// after every answer so the session can be abandoned and resumed. The twelve
+// safeguards with no GCP surface come last, grouped, because they are a
+// different conversation with a different owner.
+func runInterview(path string, sgs []safeguard, exc []excluded) int {
+	af, err := loadAnswers(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "compliance-report: %v\n", err)
+		return 2
+	}
+	who := auditor()
+
+	type q struct {
+		key, sg, title, text, owner string
+	}
+	var queue []q
+	for _, s := range sgs {
+		for _, r := range s.requirements {
+			if !r.manual() {
+				continue
+			}
+			k := reqKey(s.id, r.text)
+			if _, done := af.Answers[k]; !done {
+				queue = append(queue, q{k, s.id, s.title, r.text, ""})
+			}
+		}
+	}
+	for _, e := range exc {
+		k := reqKey(e.id, e.title)
+		if _, done := af.Answers[k]; !done {
+			queue = append(queue, q{k, e.id, e.title, e.title, e.owner})
+		}
+	}
+
+	if len(queue) == 0 {
+		fmt.Printf("Nothing left to answer — %d recorded in %s\n", len(af.Answers), path)
+		return 0
+	}
+
+	fmt.Printf("\nManual interview · %d to answer · %d already recorded\n", len(queue), len(af.Answers))
+	fmt.Printf("Answered by %s. Saved as you go; q quits and running this again resumes.\n", who)
+	fmt.Println("Evidence is not captured here — attach it to the engagement record yourself.")
+
+	in := bufio.NewReader(os.Stdin)
+	for i, item := range queue {
+		fmt.Printf("\n%s\n", strings.Repeat("═", 78))
+		fmt.Printf("%-6s %s      [%d of %d]\n", item.sg, item.title, i+1, len(queue))
+		if item.owner != "" {
+			fmt.Printf("Owner: %s — no GCP surface\n", item.owner)
+		}
+		fmt.Printf("%s\n%s\n%s\n", strings.Repeat("─", 78), item.text, strings.Repeat("─", 78))
+
+		for {
+			fmt.Print("[y]es satisfied  [n]o  [s]kip for now  [q]uit and save > ")
+			line, rerr := in.ReadString('\n')
+			if rerr != nil && line == "" {
+				fmt.Println()
+				return 0
+			}
+			a := strings.ToLower(strings.TrimSpace(line))
+			if a == "" {
+				continue
+			}
+			switch a[0] {
+			case 'y', 'n':
+				v := "pass"
+				if a[0] == 'n' {
+					v = "fail"
+				}
+				af.Answers[item.key] = answer{
+					Key: item.key, Safeguard: item.sg, Text: item.text,
+					Verdict: v, By: who, At: time.Now().Format("2006-01-02 15:04"),
+				}
+				if err := saveAnswers(path, af); err != nil {
+					fmt.Fprintf(os.Stderr, "compliance-report: %v\n", err)
+					return 2
+				}
+			case 's':
+			case 'q':
+				fmt.Printf("\n%d answered, %d left. Run the interview again to carry on.\n",
+					len(af.Answers), len(queue)-i)
+				return 0
+			default:
+				continue
+			}
+			break
+		}
+	}
+	fmt.Printf("\nAll answered — %d recorded in %s\n", len(af.Answers), path)
+	return 0
+}
+
+func auditor() string {
+	if out, err := exec.Command("gcloud", "config", "get-value", "account").Output(); err == nil {
+		if a := strings.TrimSpace(string(out)); a != "" && a != "(unset)" {
+			return a
+		}
+	}
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	return "unknown"
+}
+
+// ---------------------------------------------------------------------------
+// The report
+// ---------------------------------------------------------------------------
+
+type sgResult struct {
+	ID       string   `json:"safeguard"`
+	Title    string   `json:"title"`
+	Control  string   `json:"control"`
+	State    string   `json:"state"` // pass | fail | open
+	GCP      bool     `json:"gcp_actionable"`
+	Owner    string   `json:"owner,omitempty"`
+	Total    int      `json:"requirements"`
+	Pass     int      `json:"pass"`
+	Fail     int      `json:"fail"`
+	Open     int      `json:"open"`
+	Blocking []string `json:"blocking,omitempty"` // requirement text, fail or open
+}
+
+type counts struct {
+	Total int `json:"total"`
+	Pass  int `json:"pass"`
+	Fail  int `json:"fail"`
+	Open  int `json:"open"`
+	Pct   int `json:"pct_passing"`
+}
+
+type projCounts struct {
+	Total      int `json:"total"`
+	Audited    int `json:"audited"`
+	Passing    int `json:"passing"`
+	PctAudited int `json:"pct_audited"`
+	PctPassing int `json:"pct_passing"`
+}
+
+type sgDoc struct {
+	Schema     string     `json:"schema"`
+	Generated  string     `json:"generated"`
+	Safeguards counts     `json:"safeguards"`
+	GCPOnly    counts     `json:"gcp_actionable"`
+	Excluded   counts     `json:"no_gcp_surface"`
+	Projects   projCounts `json:"projects"`
+	Detail     []sgResult `json:"detail"`
+	Unanswered []string   `json:"unanswered_safeguards,omitempty"`
+}
+
+func pctOf(n, of int) int {
+	if of == 0 {
+		return 0
+	}
+	return n * 100 / of
+}
+
+func buildSafeguards(sgs []safeguard, exc []excluded, auto map[string]verdict3,
+	af answerFile, projects []projectStatus, projectTotal int) sgDoc {
+
+	doc := sgDoc{Schema: "cis-ig1-safeguards/1", Generated: time.Now().UTC().Format(time.RFC3339)}
+
+	add := func(c *counts, state verdict3) {
+		c.Total++
+		switch state {
+		case vcPass:
+			c.Pass++
+		case vcFail:
+			c.Fail++
+		default:
+			c.Open++
+		}
+	}
+
+	for _, s := range sgs {
+		r := sgResult{ID: s.id, Title: s.title, Control: s.control, GCP: true, Total: len(s.requirements)}
+		state := vcPass
+		for _, req := range s.requirements {
+			var v verdict3
+			if req.manual() {
+				if a, ok := af.Answers[reqKey(s.id, req.text)]; ok {
+					v = vcPass
+					if a.Verdict == "fail" {
+						v = vcFail
+					}
+				} else {
+					v = vcOpen
+				}
+			} else if got, ok := auto[req.vnum]; ok {
+				v = got
+			} else {
+				v = vcOpen // the check exists but no run has answered it
+			}
+			switch v {
+			case vcPass:
+				r.Pass++
+			case vcFail:
+				r.Fail++
+				r.Blocking = append(r.Blocking, req.text)
+			default:
+				r.Open++
+				r.Blocking = append(r.Blocking, req.text)
+			}
+			state = worse(state, v)
+		}
+		r.State = state.String()
+		doc.Detail = append(doc.Detail, r)
+		add(&doc.Safeguards, state)
+		add(&doc.GCPOnly, state)
+		if state == vcOpen {
+			doc.Unanswered = append(doc.Unanswered, s.id)
+		}
+	}
+
+	for _, e := range exc {
+		r := sgResult{ID: e.id, Title: e.title, Owner: e.owner, GCP: false, Total: 1}
+		state := vcOpen
+		if a, ok := af.Answers[reqKey(e.id, e.title)]; ok {
+			state = vcPass
+			if a.Verdict == "fail" {
+				state = vcFail
+			}
+		}
+		switch state {
+		case vcPass:
+			r.Pass = 1
+		case vcFail:
+			r.Fail = 1
+			r.Blocking = []string{e.title}
+		default:
+			r.Open = 1
+			r.Blocking = []string{e.title}
+		}
+		r.State = state.String()
+		doc.Detail = append(doc.Detail, r)
+		add(&doc.Safeguards, state)
+		add(&doc.Excluded, state)
+		if state == vcOpen {
+			doc.Unanswered = append(doc.Unanswered, e.id)
+		}
+	}
+
+	doc.Safeguards.Pct = pctOf(doc.Safeguards.Pass, doc.Safeguards.Total)
+	doc.GCPOnly.Pct = pctOf(doc.GCPOnly.Pass, doc.GCPOnly.Total)
+	doc.Excluded.Pct = pctOf(doc.Excluded.Pass, doc.Excluded.Total)
+
+	// Two different questions about projects: how much of the estate has been
+	// audited at all, and how much of it passes. A project only counts as
+	// audited when every check reached a final verdict.
+	doc.Projects.Total = projectTotal
+	for _, p := range projects {
+		if p.complete {
+			doc.Projects.Audited++
+		}
+		if p.passing {
+			doc.Projects.Passing++
+		}
+	}
+	if projectTotal == 0 {
+		doc.Projects.Total = len(projects)
+	}
+	doc.Projects.PctAudited = pctOf(doc.Projects.Audited, doc.Projects.Total)
+	doc.Projects.PctPassing = pctOf(doc.Projects.Passing, doc.Projects.Total)
+	return doc
+}
+
+func renderSafeguards(doc sgDoc) string {
+	var b strings.Builder
+	b.WriteString("# CIS IG1 — Safeguard Compliance\n\n")
+	fmt.Fprintf(&b, "Compiled %s\n\n", doc.Generated)
+
+	fmt.Fprintf(&b, "> **SAFEGUARDS: %d%% — %d of %d passing**\n",
+		doc.Safeguards.Pct, doc.Safeguards.Pass, doc.Safeguards.Total)
+	fmt.Fprintf(&b, "> **PROJECTS: %d%% audited (%d of %d) · %d%% passing (%d of %d)**\n\n",
+		doc.Projects.PctAudited, doc.Projects.Audited, doc.Projects.Total,
+		doc.Projects.PctPassing, doc.Projects.Passing, doc.Projects.Total)
+
+	b.WriteString("| | Passing | Failing | Unanswered | Total |\n|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| **All IG1 safeguards** | **%d** | %d | %d | **%d** |\n",
+		doc.Safeguards.Pass, doc.Safeguards.Fail, doc.Safeguards.Open, doc.Safeguards.Total)
+	fmt.Fprintf(&b, "| GCP-actionable | %d | %d | %d | %d |\n",
+		doc.GCPOnly.Pass, doc.GCPOnly.Fail, doc.GCPOnly.Open, doc.GCPOnly.Total)
+	fmt.Fprintf(&b, "| No GCP surface (owned elsewhere) | %d | %d | %d | %d |\n\n",
+		doc.Excluded.Pass, doc.Excluded.Fail, doc.Excluded.Open, doc.Excluded.Total)
+
+	b.WriteString("A safeguard passes when **every** requirement under it is satisfied. " +
+		"CIS sets no partial credit: IG1 is \"implement every safeguard\", so the percentage is " +
+		"progress against that, not a compliance claim in itself. **Unanswered** means a check has " +
+		"not run, is still awaiting review, or a manual requirement has not been put to the auditor — " +
+		"never that it failed.\n\n")
+
+	b.WriteString("Projects are counted two ways. **Audited** is an estate-coverage number: the pass " +
+		"reached a final verdict on every check. **Passing** is stricter — audited, and nothing failed.\n\n")
+
+	if len(doc.Unanswered) > 0 {
+		fmt.Fprintf(&b, "> ⚠️ **%d safeguard(s) cannot yet be scored**: `%s`. Run the interview for the "+
+			"manual requirements, and `--review` for any check still outstanding.\n\n",
+			len(doc.Unanswered), strings.Join(doc.Unanswered, "`, `"))
+	}
+
+	b.WriteString("## Safeguards\n\n")
+	b.WriteString("| Safeguard | | State | Req | Pass | Fail | Open |\n|---|---|---|---|---|---|---|\n")
+	for _, r := range doc.Detail {
+		state := r.State
+		switch r.State {
+		case "pass":
+			state = "**pass**"
+		case "fail":
+			state = "**FAIL**"
+		}
+		name := r.Title
+		if !r.GCP {
+			name += " _(" + r.Owner + ")_"
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %d | %d | %d | %d |\n",
+			r.ID, name, state, r.Total, r.Pass, r.Fail, r.Open)
+	}
+	b.WriteString("\n## What is blocking each one\n\n")
+	for _, r := range doc.Detail {
+		if len(r.Blocking) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "**%s %s** — %s\n\n", r.ID, r.Title, r.State)
+		for _, t := range r.Blocking {
+			fmt.Fprintf(&b, "- %s\n", t)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// countProjects counts the estate from a project list, the same format
+// run-audit.sh --projects takes: one ID per line, # comments ignored.
+func countProjects(path string) (int, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, ln := range strings.Split(string(raw), "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" || strings.HasPrefix(ln, "#") {
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
+// reqText is the requirement as a person would read it aloud: without the
+// category marker, and without the trailing link to its check. Both are
+// presentation, and both would otherwise end up inside the hash that
+// identifies the requirement across runs.
+func reqText(s string) string {
+	s = strings.TrimSpace(s)
+	for _, marker := range []string{"\u2699\ufe0f", "\U0001f50d", "\U0001f5a5\ufe0f", "\u2699", "\U0001f5a5"} {
+		s = strings.TrimSpace(strings.TrimPrefix(s, marker))
+	}
+	if i := strings.Index(s, " \u2192 ["); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
