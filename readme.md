@@ -221,6 +221,7 @@ CIS sets no partial credit — IG1 is "implement every safeguard" — so the per
 |---|---|
 | [`docs/cis-ig1-auditor-setup.md`](docs/cis-ig1-auditor-setup.md) | **First.** Sign in, branch, impersonate, output directory; one-time Cloud Shell setup. |
 | [`config/readme.md`](config/readme.md) | The settings: what goes in `audit.env` and `projects.txt`, and what is committed. |
+| [`docs/cis-ig1-project-checklist.md`](docs/cis-ig1-project-checklist.md) | **One project, start to finish.** The checklist for an engagement already under way. |
 | [`docs/cis-ig1-run-sheet.md`](docs/cis-ig1-run-sheet.md) | **At the terminal.** Flat copy-paste commands, org then per project. |
 | [`docs/cis-ig1-audit-runbook.md`](docs/cis-ig1-audit-runbook.md) | The same, with context and reasoning. |
 | [`docs/cis-ig1-scripted-audit.md`](docs/cis-ig1-scripted-audit.md) | Just the terminal work. |

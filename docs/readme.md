@@ -13,6 +13,7 @@
 | Track the engineering effort | [Tracker](cis-ig1-tracker.xlsx) |
 | Teach the team | [Training](training/) |
 | See what benchmark work counts toward IG1 | [Benchmark contribution](cis-ig1-benchmark-overlap.md) |
+| Audit one more project, mid-engagement | [Project checklist](cis-ig1-project-checklist.md) |
 | Know which APIs to enable before running | [Required APIs](cis-ig1-required-apis.md) |
 
 ## How the checklist is marked
