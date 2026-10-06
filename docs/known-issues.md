@@ -45,7 +45,7 @@ Leave V3 enumerating everything — catching projects nobody knew about is its
 entire purpose — but report excluded projects separately rather than as
 findings.
 
-## An ERROR cannot be resolved by the auditor
+## ~~An ERROR cannot be resolved by the auditor~~ — FIXED 2026-09-23 (`59948f6`)
 
 **Found:** 2026-09-23, same engagement.
 
@@ -60,7 +60,8 @@ re-running the pass successfully. Where the cause is environmental — a quota,
 a propagation delay, an API enabled mid-run — that may not be possible on the
 day.
 
-**Fix, when there is time:** let `--review` offer blocked checks too, recording
-the verdict as the auditor's with the machine's ERROR text preserved beneath
-it, exactly as a decided REVIEW already does. The distinction that matters in
-the report is *who* decided, and that is already captured.
+**Fixed.** `--review` offers blocked checks alongside REVIEW ones, with the
+failure printed above the prompt so the call is made with it in view. The
+report states both verdicts — the auditor's, and the machine's ERROR with its
+stderr kept underneath — so a human's call cannot be mistaken for a clean
+machine result.
