@@ -24,7 +24,7 @@ The audit runs as a read-only service account, impersonated and never keyed — 
 | 5 | **Run the audit** | Auditor | [`run-audit.sh`](#run-auditsh--the-whole-audit-in-one-command), below |
 | 6 | **Review.** Confirm every pass says `RUN STATUS: OK`, then decide each REVIEW check PASS or FAIL, one at a time. Completion reaches 100% when the last one is decided | Auditor | `./run-audit.sh --review audit-state/runs/<timestamp>` — [below](#the-score-and---review) |
 | 7 | **Do the manual half** — 102 requirements no API can answer: 30 console tasks, 72 process questions | Auditor, with the customer | [Runbook phases 8–9](docs/cis-ig1-audit-runbook.md) · [process interview](docs/training/09-process-interview.md) |
-| 8 | **Commit the results** to your branch and push | Auditor | `git add audit-state && git commit && git push` — [setup step 8](docs/cis-ig1-auditor-setup.md#8-run-and-commit) |
+| 8 | **Compile and commit** — `./run-audit.sh --compile`, then push | Auditor | `git add audit-state && git commit && git push` — [setup step 8](docs/cis-ig1-auditor-setup.md#8-run-and-commit) |
 | 9 | **Tear down** — stop impersonating, destroy the service account, disable only the APIs step 1 enabled | Admin, at the end | [Run sheet Part C](docs/cis-ig1-run-sheet.md#part-c--compile-and-tear-down) |
 
 Audit one project at a time. The first run includes the organization pass; add `--no-org` for each project after that, so the organization's REVIEW checks are decided once rather than per project.
@@ -169,19 +169,24 @@ Two questions the engagement reports, and they need different inputs.
 So the auditor answers those once, in an interview:
 
 ```bash
-go run compliance-report.go -interview audit-state/manual-answers.json
+./run-audit.sh --interview
 ```
 
 114 questions — the 102 manual requirements and the 12 off-platform safeguards — each a yes or no, saved as you go and resumable with `q`. No evidence is captured there; attach it to the engagement record yourself.
 
-Then the report joins the runs, the answers and the checklist:
+Then one command builds every report, across every run:
 
 ```bash
-go run compliance-report.go -runs audit-state/runs \
-  -answers audit-state/manual-answers.json \
-  -projects config/projects.txt \
-  -safeguards-md audit-state/safeguards.md \
-  -safeguards-json audit-state/safeguards.json
+./run-audit.sh --compile
+```
+
+```
+audit-state/remediation-plan.md     the work list, pivoted by finding
+audit-state/remediation-plan.csv    the same, for the tracker
+audit-state/compliance-score.md     coverage and the three numbers
+audit-state/compliance-score.json   the same, for the dashboard
+audit-state/safeguards.md           which of the 56 pass, and what blocks the rest
+audit-state/safeguards.json         the same, for the dashboard
 ```
 
 ```

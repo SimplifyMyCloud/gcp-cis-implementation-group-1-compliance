@@ -31,6 +31,8 @@
 # Settings come from config/audit.env — the organization, the service account
 # and the check inputs. Copy config/audit.env.example to start one.
 #   ./run-audit.sh --review audit-state/runs/2026-09-14_12-58-20  # decide every REVIEW check
+#   ./run-audit.sh --interview                    # the requirements no command can answer
+#   ./run-audit.sh --compile                      # every report, across every run
 #
 # A run leaves the REVIEW checks undecided, so its Completion is below 100%.
 # --review puts each one to the auditor, one at a time, for PASS or FAIL, then
@@ -46,6 +48,8 @@ usage() {
   cat <<'USAGE'
 Usage: ./run-audit.sh [--project ID ...|--projects FILE|--all] [options]
        ./run-audit.sh --review RUN_DIR
+       ./run-audit.sh --interview
+       ./run-audit.sh --compile
 
 Settings come from config/audit.env unless --config says otherwise: ORG_ID,
 AUDIT_PROJECT, SA_EMAIL, APPROVED_REGISTRIES, ALLOWED_LOCATIONS,
@@ -60,6 +64,10 @@ Projects (default: organization pass only)
 Options
   --skip V96,V44     Checks NOT to run (reported as SKIP). Use for a check that hangs.
   --parallel N       Checks run at once (default 8). --parallel 1 runs them in order.
+  --interview        Put every requirement no command can answer to the auditor.
+                     114 questions, saved as you go, resumable.
+  --compile          Build every report from every run: the remediation plan,
+                     the compliance score and the safeguard status.
   --config FILE      Settings file (default: config/audit.env)
   --org ID           Organization ID (default: ORG_ID from the settings file, or $ORG_ID)
   --out DIR          Where run directories are created (default: ./audit-state/runs)
@@ -78,7 +86,7 @@ audit everything). They are listed in evidence/excluded.txt.
 USAGE
 }
 
-CONFIG="" ORG="${ORG_ID:-}" OUT="./audit-state/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8 REVIEW_DIR=""
+CONFIG="" ORG="${ORG_ID:-}" OUT="./audit-state/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8 REVIEW_DIR="" DO_COMPILE=false DO_INTERVIEW=false
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -92,12 +100,82 @@ while [[ $# -gt 0 ]]; do
     --skip)     SKIP="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
     --review)   REVIEW_DIR="$2"; shift 2 ;;
+    --compile)  DO_COMPILE=true; shift ;;
+    --interview) DO_INTERVIEW=true; shift ;;
     -h|--help)  usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
 
 die() { echo "run-audit: $*" >&2; exit 2; }
+
+# ---------------------------------------------------------------------------
+# --interview and --compile: everything after the runs are done.
+# ---------------------------------------------------------------------------
+# Neither touches GCP. The interview asks the auditor; the compile reads what
+# is already on disk. Both work on the whole engagement rather than one run,
+# so they take no run directory.
+STATE=$(dirname "$OUT")          # audit-state/, beside the runs
+ANSWERS="$STATE/manual-answers.json"
+HERE=$(cd "$(dirname "$0")" && pwd)
+
+if $DO_INTERVIEW; then
+  cd "$HERE"
+  mkdir -p "$STATE"
+  exec go run compliance-report.go -interview "$ANSWERS"
+fi
+
+if $DO_COMPILE; then
+  cd "$HERE"
+  [[ -d "$OUT" ]] || die "no runs found in $OUT — audit something first"
+
+  # The estate list is the denominator for coverage. Without it the reports
+  # still build, but a percentage of an unknown total is not a percentage, so
+  # say so rather than quietly dividing by what happens to be present.
+  proj=()
+  if [[ -f "$HERE/config/projects.txt" ]]; then
+    proj=(-projects "$HERE/config/projects.txt")
+  else
+    echo "note: no config/projects.txt — coverage will be of the projects audited, not the estate"
+  fi
+  ans=()
+  if [[ -f "$ANSWERS" ]]; then
+    ans=(-answers "$ANSWERS")
+  else
+    echo "note: no manual answers yet — run ./run-audit.sh --interview, or only the"
+    echo "      5 fully automated safeguards can be scored"
+  fi
+
+  echo
+  echo "=== Remediation plan and compliance score"
+  go run rollup.go -in "$OUT" \
+    -out        "$STATE/remediation-plan.md" \
+    -csv        "$STATE/remediation-plan.csv" \
+    -score-md   "$STATE/compliance-score.md" \
+    -score-json "$STATE/compliance-score.json" \
+    ${proj[@]+"${proj[@]}"}
+
+  echo
+  echo "=== Safeguard status"
+  go run compliance-report.go -runs "$OUT" \
+    -safeguards-md   "$STATE/safeguards.md" \
+    -safeguards-json "$STATE/safeguards.json" \
+    ${ans[@]+"${ans[@]}"} ${proj[@]+"${proj[@]}"}
+
+  echo
+  echo "================================================================"
+  grep -m1 -o 'SCORE: [^*]*' "$STATE/compliance-score.md" 2>/dev/null || true
+  grep -m1 -o 'SAFEGUARDS: [^*]*' "$STATE/safeguards.md"  2>/dev/null || true
+  grep -m1 -o 'PROJECTS: [^*]*'   "$STATE/safeguards.md"  2>/dev/null || true
+  echo "================================================================"
+  echo "  $STATE/remediation-plan.md    the work list, pivoted by finding"
+  echo "  $STATE/remediation-plan.csv   the same, for the tracker"
+  echo "  $STATE/compliance-score.md    coverage and the three numbers"
+  echo "  $STATE/compliance-score.json  the same, for the dashboard"
+  echo "  $STATE/safeguards.md          which of the 56 pass, and what blocks the rest"
+  echo "  $STATE/safeguards.json        the same, for the dashboard"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # --review: decide the REVIEW checks of a finished run. Nothing is re-run.

@@ -275,7 +275,7 @@ func loadPacks(root string) ([]packInfo, []string, error) {
 
 	var notes []string
 	for older, newer := range supersededBy {
-		notes = append(notes, fmt.Sprintf("%s superseded by %s", older, newer))
+		notes = append(notes, fmt.Sprintf("%s superseded by %s", relTo(root, older), relTo(root, newer)))
 	}
 	sort.Strings(notes)
 	return packs, notes, err
