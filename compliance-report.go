@@ -175,14 +175,15 @@ func main() {
 
 	if *sgMD != "" || *sgJSON != "" {
 		auto := map[string]verdict3{}
+		autoBy := map[string]map[string]verdict3{}
 		var projects []projectStatus
 		if *runs != "" {
-			a, p, rerr := loadRuns(*runs)
+			a, bt, p, rerr := loadRuns(*runs)
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", rerr)
 				os.Exit(2)
 			}
-			auto, projects = a, p
+			auto, autoBy, projects = a, bt, p
 		}
 		af := answerFile{Answers: map[string]answer{}}
 		if *answers != "" {
@@ -202,7 +203,7 @@ func main() {
 			}
 			total = n
 		}
-		doc := buildSafeguards(safeguards, excludedSGs, auto, af, projects, total)
+		doc := buildSafeguards(safeguards, excludedSGs, auto, autoBy, af, projects, total)
 		if *sgJSON != "" {
 			b, jerr := json.MarshalIndent(doc, "", "  ")
 			if jerr != nil {
@@ -754,7 +755,7 @@ type projectStatus struct {
 // loadRuns walks a directory of runs and returns the worst verdict seen for
 // each check, plus per-project status. The newest file for a target wins, the
 // same rule rollup.go applies: a target audited twice is counted once.
-func loadRuns(root string) (map[string]verdict3, []projectStatus, error) {
+func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3, []projectStatus, error) {
 	// Which pass wins when a target was audited more than once — and it will
 	// be, because a fix is promoted dev → production and the project is
 	// re-audited afterwards. The rule is rollup.go's: a COMPLETE pass beats an
@@ -794,10 +795,14 @@ func loadRuns(root string) (map[string]verdict3, []projectStatus, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	verdicts := map[string]verdict3{}
+	// byTarget is the same data undivided: which target reached which verdict
+	// for each check, so a failing safeguard can name the projects holding it
+	// there rather than only the requirement.
+	byTarget := map[string]map[string]verdict3{}
 	var projects []projectStatus
 	names := make([]string, 0, len(newest))
 	for n := range newest {
@@ -844,12 +849,16 @@ func loadRuns(root string) (map[string]verdict3, []projectStatus, error) {
 			} else {
 				verdicts[r.ID] = v
 			}
+			if byTarget[r.ID] == nil {
+				byTarget[r.ID] = map[string]verdict3{}
+			}
+			byTarget[r.ID][name] = v
 		}
 		if run.Scope == "project" {
 			projects = append(projects, st)
 		}
 	}
-	return verdicts, projects, nil
+	return verdicts, byTarget, projects, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -965,17 +974,28 @@ func auditor() string {
 // ---------------------------------------------------------------------------
 
 type sgResult struct {
-	ID       string   `json:"safeguard"`
-	Title    string   `json:"title"`
-	Control  string   `json:"control"`
-	State    string   `json:"state"` // pass | fail | open
-	GCP      bool     `json:"gcp_actionable"`
-	Owner    string   `json:"owner,omitempty"`
-	Total    int      `json:"requirements"`
-	Pass     int      `json:"pass"`
-	Fail     int      `json:"fail"`
-	Open     int      `json:"open"`
-	Blocking []string `json:"blocking,omitempty"` // requirement text, fail or open
+	ID       string    `json:"safeguard"`
+	Title    string    `json:"title"`
+	Control  string    `json:"control"`
+	State    string    `json:"state"` // pass | fail | open
+	GCP      bool      `json:"gcp_actionable"`
+	Owner    string    `json:"owner,omitempty"`
+	Total    int       `json:"requirements"`
+	Pass     int       `json:"pass"`
+	Fail     int       `json:"fail"`
+	Open     int       `json:"open"`
+	Blocking []blocker `json:"blocking,omitempty"`
+}
+
+// blocker is one requirement standing between a safeguard and passing, and
+// the targets responsible. Naming them turns the report into a promotion
+// tracker: a safeguard waiting on a dev project is work in flight, the same
+// safeguard waiting on production is live exposure.
+type blocker struct {
+	Requirement string   `json:"requirement"`
+	Check       string   `json:"check,omitempty"` // V-number, empty when manual
+	State       string   `json:"state"`           // fail | open
+	Targets     []string `json:"targets,omitempty"`
 }
 
 type counts struct {
@@ -1013,7 +1033,8 @@ func pctOf(n, of int) int {
 }
 
 func buildSafeguards(sgs []safeguard, exc []excluded, auto map[string]verdict3,
-	af answerFile, projects []projectStatus, projectTotal int) sgDoc {
+	autoBy map[string]map[string]verdict3, af answerFile,
+	projects []projectStatus, projectTotal int) sgDoc {
 
 	doc := sgDoc{Schema: "cis-ig1-safeguards/1", Generated: time.Now().UTC().Format(time.RFC3339)}
 
@@ -1034,6 +1055,15 @@ func buildSafeguards(sgs []safeguard, exc []excluded, auto map[string]verdict3,
 		state := vcPass
 		for _, req := range s.requirements {
 			var v verdict3
+			var targets []string
+			if !req.manual() {
+				for target, tv := range autoBy[req.vnum] {
+					if tv != vcPass {
+						targets = append(targets, target)
+					}
+				}
+				sort.Strings(targets)
+			}
 			if req.manual() {
 				if a, ok := af.Answers[reqKey(s.id, req.text)]; ok {
 					v = vcPass
@@ -1053,10 +1083,10 @@ func buildSafeguards(sgs []safeguard, exc []excluded, auto map[string]verdict3,
 				r.Pass++
 			case vcFail:
 				r.Fail++
-				r.Blocking = append(r.Blocking, req.text)
+				r.Blocking = append(r.Blocking, blocker{req.text, req.vnum, "fail", targets})
 			default:
 				r.Open++
-				r.Blocking = append(r.Blocking, req.text)
+				r.Blocking = append(r.Blocking, blocker{req.text, req.vnum, "open", targets})
 			}
 			state = worse(state, v)
 		}
@@ -1083,10 +1113,10 @@ func buildSafeguards(sgs []safeguard, exc []excluded, auto map[string]verdict3,
 			r.Pass = 1
 		case vcFail:
 			r.Fail = 1
-			r.Blocking = []string{e.title}
+			r.Blocking = []blocker{{e.title, "", "fail", []string{e.owner}}}
 		default:
 			r.Open = 1
-			r.Blocking = []string{e.title}
+			r.Blocking = []blocker{{e.title, "", "open", []string{e.owner}}}
 		}
 		r.State = state.String()
 		doc.Detail = append(doc.Detail, r)
@@ -1173,13 +1203,30 @@ func renderSafeguards(doc sgDoc) string {
 			r.ID, name, state, r.Total, r.Pass, r.Fail, r.Open)
 	}
 	b.WriteString("\n## What is blocking each one\n\n")
+	b.WriteString("Where a check names projects, those are the ones that have not satisfied it. " +
+		"A safeguard waiting only on a development project is a fix in flight; the same safeguard " +
+		"waiting on production is live exposure.\n\n")
 	for _, r := range doc.Detail {
 		if len(r.Blocking) == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "**%s %s** — %s\n\n", r.ID, r.Title, r.State)
-		for _, t := range r.Blocking {
-			fmt.Fprintf(&b, "- %s\n", t)
+		fmt.Fprintf(&b, "**%s %s** — %s\n\n", r.ID, r.Title, strings.ToUpper(r.State))
+		for _, bl := range r.Blocking {
+			line := "- " + bl.Requirement
+			if bl.Check != "" {
+				line += " · `" + bl.Check + "`"
+			}
+			switch {
+			case len(bl.Targets) > 0 && bl.State == "fail":
+				line += " — fails in **" + strings.Join(bl.Targets, "**, **") + "**"
+			case len(bl.Targets) > 0:
+				line += " — outstanding in " + strings.Join(bl.Targets, ", ")
+			case bl.Check == "":
+				line += " — not yet put to the auditor"
+			default:
+				line += " — no run has answered it"
+			}
+			fmt.Fprintf(&b, "%s\n", line)
 		}
 		b.WriteString("\n")
 	}
@@ -1210,7 +1257,7 @@ func countProjects(path string) (int, error) {
 // identifies the requirement across runs.
 func reqText(s string) string {
 	s = strings.TrimSpace(s)
-	for _, marker := range []string{"\u2699\ufe0f", "\U0001f50d", "\U0001f5a5\ufe0f", "\u2699", "\U0001f5a5"} {
+	for _, marker := range []string{"\u2699\ufe0f", "\U0001f50d", "\U0001f465", "\U0001f5a5\ufe0f", "\u2699", "\U0001f5a5"} {
 		s = strings.TrimSpace(strings.TrimPrefix(s, marker))
 	}
 	if i := strings.Index(s, " \u2192 ["); i >= 0 {
