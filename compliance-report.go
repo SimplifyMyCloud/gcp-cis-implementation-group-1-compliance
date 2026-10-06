@@ -734,6 +734,7 @@ func saveAnswers(path string, af answerFile) error {
 
 type savedRun struct {
 	Target  string `json:"Target"`
+	Stamp   string `json:"Stamp"`
 	Scope   string `json:"Scope"`
 	Results []struct {
 		ID      string `json:"ID"`
@@ -754,9 +755,16 @@ type projectStatus struct {
 // each check, plus per-project status. The newest file for a target wins, the
 // same rule rollup.go applies: a target audited twice is counted once.
 func loadRuns(root string) (map[string]verdict3, []projectStatus, error) {
+	// Which pass wins when a target was audited more than once — and it will
+	// be, because a fix is promoted dev → production and the project is
+	// re-audited afterwards. The rule is rollup.go's: a COMPLETE pass beats an
+	// incomplete one however old, and between two of equal standing the newer
+	// wins. Taking the newest outright would let a re-run with one REVIEW
+	// still outstanding supersede the finished audit it was meant to confirm.
 	type found struct {
-		path string
-		mod  int64
+		path     string
+		stamp    string
+		complete bool
 	}
 	newest := map[string]found{}
 	err := filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
@@ -766,9 +774,22 @@ func loadRuns(root string) (map[string]verdict3, []projectStatus, error) {
 		if !strings.Contains(filepath.ToSlash(path), "/evidence/results/") {
 			return nil
 		}
+		raw, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil
+		}
+		var run savedRun
+		if json.Unmarshal(raw, &run) != nil {
+			return nil
+		}
+		cand := found{path: path, stamp: run.Stamp, complete: runComplete(run)}
+		if cand.stamp == "" {
+			cand.stamp = fi.ModTime().UTC().Format("2006-01-02 15:04")
+		}
 		name := strings.TrimSuffix(filepath.Base(path), ".json")
-		if prev, ok := newest[name]; !ok || fi.ModTime().Unix() > prev.mod {
-			newest[name] = found{path, fi.ModTime().Unix()}
+		prev, ok := newest[name]
+		if !ok || betterRun(cand.complete, cand.stamp, prev.complete, prev.stamp) {
+			newest[name] = cand
 		}
 		return nil
 	})
@@ -1196,4 +1217,29 @@ func reqText(s string) string {
 		s = s[:i]
 	}
 	return strings.TrimSpace(s)
+}
+
+// runComplete reports whether every check in a pass reached a final verdict,
+// counting an auditor's decision as final.
+func runComplete(run savedRun) bool {
+	for _, r := range run.Results {
+		label := r.Verdict
+		if d, ok := run.Decisions[r.ID]; ok && d.Verdict != "" {
+			label = d.Verdict
+		}
+		switch strings.ToUpper(label) {
+		case "PASS", "FAIL", "N/A", "NA", "XREF":
+		default:
+			return false
+		}
+	}
+	return len(run.Results) > 0
+}
+
+// betterRun is rollup.go's supersedes rule: completeness first, then recency.
+func betterRun(aComplete bool, aStamp string, bComplete bool, bStamp string) bool {
+	if aComplete != bComplete {
+		return aComplete
+	}
+	return aStamp > bStamp
 }
