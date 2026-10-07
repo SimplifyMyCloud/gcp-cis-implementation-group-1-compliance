@@ -167,6 +167,8 @@ if $DO_COMPILE; then
   grep -m1 -o 'SCORE: [^*]*' "$STATE/compliance-score.md" 2>/dev/null || true
   grep -m1 -o 'SAFEGUARDS: [^*]*' "$STATE/safeguards.md"  2>/dev/null || true
   grep -m1 -o 'PROJECTS: [^*]*'   "$STATE/safeguards.md"  2>/dev/null || true
+  grep -m1 -o 'ORGANIZATION: [^*]*' "$STATE/safeguards.md" 2>/dev/null || true
+  grep -m1 -o 'PROJECTS, BY SAFEGUARD: [^*]*' "$STATE/safeguards.md" 2>/dev/null || true
   echo "================================================================"
   echo "  $STATE/remediation-plan.md    the work list, pivoted by finding"
   echo "  $STATE/remediation-plan.csv   the same, for the tracker"

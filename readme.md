@@ -191,8 +191,14 @@ audit-state/safeguards.json         the same, for the dashboard
 
 ```
 > **SAFEGUARDS: 25% — 14 of 56 passing**
-> **PROJECTS: 0% audited (0 of 44) · 0% passing (0 of 44)**
+> **PROJECTS: 16% audited (7 of 44) · 11% passing (5 of 44)**
+> **ORGANIZATION: 62% compliant** — 17 of 27 safeguards the organization pass judges
+> **PROJECTS, BY SAFEGUARD: 83% compliant on average** across finished audits
 ```
+
+The last two are the daily and weekly reporting numbers. They are scored per target, against the safeguards that target's own pass judges — a project pass reaches 35 of the 56, the organization pass 27, and seven safeguards have no project-scope check at all. Scoring every target out of 56 would mark each one down for safeguards it was never asked about, so each gets the denominator it is entitled to; every project pass covers the same 35, which is what makes projects comparable with each other and averageable.
+
+Those two are **automated checks only** — the manual half is answered once for the organization and carried in the headline `of 56` figure. And only a finished audit contributes to the average, because a pass holding undecided checks reads as non-compliance when it is really work outstanding.
 
 Three things worth knowing about those numbers:
 

@@ -738,8 +738,9 @@ type savedRun struct {
 	Stamp   string `json:"Stamp"`
 	Scope   string `json:"Scope"`
 	Results []struct {
-		ID      string `json:"ID"`
-		Verdict string `json:"Verdict"`
+		ID      string   `json:"ID"`
+		Verdict string   `json:"Verdict"`
+		Refs    []string `json:"Refs"`
 	} `json:"Results"`
 	Decisions map[string]struct {
 		Verdict string `json:"Verdict"`
@@ -827,6 +828,9 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 			if d, ok := run.Decisions[r.ID]; ok && d.Verdict != "" {
 				label = d.Verdict
 			}
+			if len(r.Refs) > 0 {
+				continue // a cross-reference: its referents already count
+			}
 			var v verdict3
 			switch strings.ToUpper(label) {
 			case "PASS", "N/A", "NA":
@@ -834,7 +838,7 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 			case "FAIL":
 				v = vcFail
 			case "XREF":
-				continue // resolved from whatever it points at
+				continue
 			default: // REVIEW, SKIP, ERROR, DENIED
 				v = vcOpen
 			}
@@ -1014,15 +1018,40 @@ type projCounts struct {
 	PctPassing int `json:"pct_passing"`
 }
 
+// targetResult scores one target against the safeguards IT can judge. A
+// project pass runs 103 of the 188 checks and reaches 37 of the 44
+// GCP-actionable safeguards; the organization pass reaches 29. Seven
+// safeguards have no project-scope check at all. Scoring every target out of
+// 56 would mark each one down for 19 safeguards it was never asked about, so
+// each is scored against its own denominator — equal between projects, since
+// every project pass covers the same 37.
+//
+// These are automated checks only. The manual half is answered once for the
+// organization, not per target, and lives in the headline figure instead.
+type targetResult struct {
+	Name       string `json:"name"`
+	Scope      string `json:"scope"`
+	Complete   bool   `json:"complete"`
+	Counted    bool   `json:"counted"`
+	Safeguards int    `json:"safeguards_judged"`
+	Passing    int    `json:"passing"`
+	Failing    int    `json:"failing"`
+	Open       int    `json:"open"`
+	Pct        int    `json:"pct_passing"`
+}
+
 type sgDoc struct {
-	Schema     string     `json:"schema"`
-	Generated  string     `json:"generated"`
-	Safeguards counts     `json:"safeguards"`
-	GCPOnly    counts     `json:"gcp_actionable"`
-	Excluded   counts     `json:"no_gcp_surface"`
-	Projects   projCounts `json:"projects"`
-	Detail     []sgResult `json:"detail"`
-	Unanswered []string   `json:"unanswered_safeguards,omitempty"`
+	Schema     string         `json:"schema"`
+	Generated  string         `json:"generated"`
+	Safeguards counts         `json:"safeguards"`
+	GCPOnly    counts         `json:"gcp_actionable"`
+	Excluded   counts         `json:"no_gcp_surface"`
+	Projects   projCounts     `json:"projects"`
+	Org        *targetResult  `json:"organization,omitempty"`
+	ProjectAvg int            `json:"projects_pct_passing_mean"`
+	Targets    []targetResult `json:"targets"`
+	Detail     []sgResult     `json:"detail"`
+	Unanswered []string       `json:"unanswered_safeguards,omitempty"`
 }
 
 func pctOf(n, of int) int {
@@ -1148,7 +1177,95 @@ func buildSafeguards(sgs []safeguard, exc []excluded, auto map[string]verdict3,
 	}
 	doc.Projects.PctAudited = pctOf(doc.Projects.Audited, doc.Projects.Total)
 	doc.Projects.PctPassing = pctOf(doc.Projects.Passing, doc.Projects.Total)
+
+	doc.Targets = scoreTargets(sgs, autoBy, projects)
+	var sum, n int
+	for i := range doc.Targets {
+		tr := doc.Targets[i]
+		if tr.Scope == "organization" {
+			org := tr
+			doc.Org = &org
+			continue
+		}
+		// Only a finished audit contributes to the average. An unreconciled
+		// pass has safeguards nobody has judged yet, and averaging those in
+		// reads as non-compliance rather than as work outstanding.
+		if tr.Counted {
+			sum += tr.Pct
+			n++
+		}
+	}
+	doc.ProjectAvg = 0
+	if n > 0 {
+		doc.ProjectAvg = sum / n
+	}
 	return doc
+}
+
+// scoreTargets scores each target against the safeguards its own pass judges.
+// A safeguard counts for a target when at least one of its requirements has a
+// check that target ran, and passes when every such requirement passed there.
+func scoreTargets(sgs []safeguard, autoBy map[string]map[string]verdict3,
+	projects []projectStatus) []targetResult {
+
+	status := map[string]projectStatus{}
+	names := map[string]string{} // name -> scope
+	for _, p := range projects {
+		status[p.name] = p
+		names[p.name] = "project"
+	}
+	for _, byTarget := range autoBy {
+		for target := range byTarget {
+			if _, ok := names[target]; !ok {
+				names[target] = "organization"
+			}
+		}
+	}
+
+	var out []targetResult
+	for target, scope := range names {
+		tr := targetResult{Name: target, Scope: scope}
+		if st, ok := status[target]; ok {
+			tr.Complete, tr.Counted = st.complete, st.complete
+		} else {
+			tr.Complete, tr.Counted = true, true // the organization pass
+		}
+		for _, s := range sgs {
+			judged, state := false, vcPass
+			for _, req := range s.requirements {
+				if req.manual() {
+					continue
+				}
+				v, ran := autoBy[req.vnum][target]
+				if !ran {
+					continue
+				}
+				judged = true
+				state = worse(state, v)
+			}
+			if !judged {
+				continue
+			}
+			tr.Safeguards++
+			switch state {
+			case vcPass:
+				tr.Passing++
+			case vcFail:
+				tr.Failing++
+			default:
+				tr.Open++
+			}
+		}
+		tr.Pct = pctOf(tr.Passing, tr.Safeguards)
+		out = append(out, tr)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if (out[i].Scope == "organization") != (out[j].Scope == "organization") {
+			return out[i].Scope == "organization"
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 func renderSafeguards(doc sgDoc) string {
@@ -1158,9 +1275,14 @@ func renderSafeguards(doc sgDoc) string {
 
 	fmt.Fprintf(&b, "> **SAFEGUARDS: %d%% — %d of %d passing**\n",
 		doc.Safeguards.Pct, doc.Safeguards.Pass, doc.Safeguards.Total)
-	fmt.Fprintf(&b, "> **PROJECTS: %d%% audited (%d of %d) · %d%% passing (%d of %d)**\n\n",
+	fmt.Fprintf(&b, "> **PROJECTS: %d%% audited (%d of %d) · %d%% passing (%d of %d)**\n",
 		doc.Projects.PctAudited, doc.Projects.Audited, doc.Projects.Total,
 		doc.Projects.PctPassing, doc.Projects.Passing, doc.Projects.Total)
+	if doc.Org != nil {
+		fmt.Fprintf(&b, "> **ORGANIZATION: %d%% compliant** — %d of %d safeguards the organization pass judges\n",
+			doc.Org.Pct, doc.Org.Passing, doc.Org.Safeguards)
+	}
+	fmt.Fprintf(&b, "> **PROJECTS, BY SAFEGUARD: %d%% compliant on average** across finished audits\n\n", doc.ProjectAvg)
 
 	b.WriteString("| | Passing | Failing | Unanswered | Total |\n|---|---|---|---|---|\n")
 	fmt.Fprintf(&b, "| **All IG1 safeguards** | **%d** | %d | %d | **%d** |\n",
@@ -1184,6 +1306,25 @@ func renderSafeguards(doc sgDoc) string {
 			"manual requirements, and `--review` for any check still outstanding.\n\n",
 			len(doc.Unanswered), strings.Join(doc.Unanswered, "`, `"))
 	}
+
+	b.WriteString("## By target\n\n")
+	b.WriteString("Each target is scored against the safeguards **its own pass judges**, not against all 56. " +
+		"A project pass reaches 35 of them and the organization pass 27; seven safeguards have no " +
+		"project-scope check at all, and the twelve with no GCP surface belong to neither. Scoring every " +
+		"target out of 56 would mark it down for safeguards it was never asked about.\n\n")
+	b.WriteString("Automated checks only — the manual requirements are answered once for the organization " +
+		"and carried in the headline figure instead. Only a finished audit contributes to the average.\n\n")
+	b.WriteString("| Target | Scope | Judged | Passing | Failing | Open | % | Counted |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	for _, tr := range doc.Targets {
+		counted := "yes"
+		if !tr.Counted {
+			counted = "**no**"
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %d | %d | %d | %d | **%d%%** | %s |\n",
+			tr.Name, tr.Scope, tr.Safeguards, tr.Passing, tr.Failing, tr.Open, tr.Pct, counted)
+	}
+	fmt.Fprintf(&b, "\nMean across finished project audits: **%d%%**.\n\n", doc.ProjectAvg)
 
 	b.WriteString("## Safeguards\n\n")
 	b.WriteString("| Safeguard | | State | Req | Pass | Fail | Open |\n|---|---|---|---|---|---|---|\n")
@@ -1270,6 +1411,9 @@ func reqText(s string) string {
 // counting an auditor's decision as final.
 func runComplete(run savedRun) bool {
 	for _, r := range run.Results {
+		if len(r.Refs) > 0 {
+			continue // resolved from its referents, never decided on its own
+		}
 		label := r.Verdict
 		if d, ok := run.Decisions[r.ID]; ok && d.Verdict != "" {
 			label = d.Verdict
