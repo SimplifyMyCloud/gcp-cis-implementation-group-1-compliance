@@ -53,15 +53,21 @@ Application Default Credentials (`gcloud auth application-default login`) are **
 
 ### 3. Be on the engagement branch
 
-You already have the repository on this machine. Move to the audit's branch and pick up whatever landed on `main` since you were last here:
+You already have the repository on this machine. Move to the audit's branch and pick up whatever your colleagues pushed since you were last here:
 
 ```bash
-git switch "$AUDIT_BRANCH" && git pull && git merge main
+git switch "$AUDIT_BRANCH" && git pull
 ```
 
-**Merge `main`, never rebase onto it.** The engagement branch holds commits your colleagues already have, and `git rebase main` would rewrite them — everyone else would then have to recover their local copy.
+```bash
+git config pull.rebase true
+```
 
-That is not in conflict with `pull.rebase true`, which [Running with a team](cis-ig1-audit-runbook.md#running-with-a-team) recommends. The two govern different things: a pull rebases **your own unpushed commits** onto what you fetched, which is safe because nobody has seen them, and it keeps the branch a straight line instead of a merge commit for every push race. The rule is **rebase what only you have, merge what others have.**
+Set that once, in this repository. A pull then rebases **your own unpushed commits** onto what you fetched, which is safe because nobody has seen them, and the branch stays a straight line instead of collecting a merge commit every time a colleague pushes first. What you will hit on a shared branch is a rejected push, not a merge conflict — each run writes its own directory, so the files never collide.
+
+**Do not merge or rebase the repository's `main` into the engagement branch** unless `main` is where this kit's updates actually arrive. In a customer repository shared with other teams it is not: updates come in as a fresh copy of the kit, committed to this branch, and merging their `main` would pull unrelated work into the directory layout the tooling expects. If `main` *is* the kit's home — the engagement has a repository to itself — then merge it, never rebase onto it: the branch holds commits your colleagues already have, and a rebase would rewrite them.
+
+The rule either way is **rebase what only you have, merge what others have.**
 
 One branch per engagement, named `<customer>-gcp-ig1-audit`, set as `AUDIT_BRANCH` in `config/audit.env`. Everyone auditing this customer works on it — each run writes its own dated directory, so nobody overwrites anyone, and who did what comes from the commits. See [Running with a team](cis-ig1-audit-runbook.md#running-with-a-team).
 
@@ -311,7 +317,7 @@ audit-on
 ```
 
 ```bash
-git switch main && git pull && git switch "$AUDIT_BRANCH" && git merge main
+git switch "$AUDIT_BRANCH" && git pull
 ```
 
 ```bash
