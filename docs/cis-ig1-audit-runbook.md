@@ -76,9 +76,13 @@ so they are the one thing three people can genuinely conflict over. See
 
 Day to day, three habits keep it painless:
 
-- `git config --global pull.rebase true`, then pull before every push. What you
-  will hit is a rejected push because someone else got there first, not a merge
-  conflict.
+- `git config pull.rebase true` in this repository, then pull before every push.
+  What you will hit is a rejected push because someone else got there first,
+  not a merge conflict. A pull rebases only **your own unpushed commits**, so
+  nothing anybody has seen is rewritten, and the branch stays a straight line
+  rather than collecting a merge commit per race. Pulling `main` into the
+  branch is the opposite case and stays a merge — **rebase what only you have,
+  merge what others have.**
 - Add your own paths — `git add audit-state/runs/2026-09-22_10-14-33` — and
   never `git add -A`. A blind add is how a live IAM inventory reached a public
   repository twice.

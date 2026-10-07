@@ -59,7 +59,9 @@ You already have the repository on this machine. Move to the audit's branch and 
 git switch "$AUDIT_BRANCH" && git pull && git merge main
 ```
 
-Merge rather than rebase. The branch holds committed results, and a rebase rewrites commits that may already be pushed.
+**Merge `main`, never rebase onto it.** The engagement branch holds commits your colleagues already have, and `git rebase main` would rewrite them — everyone else would then have to recover their local copy.
+
+That is not in conflict with `pull.rebase true`, which [Running with a team](cis-ig1-audit-runbook.md#running-with-a-team) recommends. The two govern different things: a pull rebases **your own unpushed commits** onto what you fetched, which is safe because nobody has seen them, and it keeps the branch a straight line instead of a merge commit for every push race. The rule is **rebase what only you have, merge what others have.**
 
 One branch per engagement, named `<customer>-gcp-ig1-audit`, set as `AUDIT_BRANCH` in `config/audit.env`. Everyone auditing this customer works on it — each run writes its own dated directory, so nobody overwrites anyone, and who did what comes from the commits. See [Running with a team](cis-ig1-audit-runbook.md#running-with-a-team).
 
