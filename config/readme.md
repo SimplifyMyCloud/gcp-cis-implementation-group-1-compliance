@@ -1,83 +1,49 @@
-# Settings
+# config
 
-Everything the audit needs you to decide lives here, and nothing else does.
+Every setting the audit needs. Nothing else lives here.
 
-Output goes elsewhere — `audit-state/runs/` — so clearing a directory
-full of old runs never costs you your configuration. That separation is the
-point of this directory.
-
-## Start an engagement
+| | |
+|---|---|
+| `audit.env` | The organization, the audit identity, the check inputs |
+| `projects.txt` | The estate — the coverage denominator |
+| `*.example` | Starting points. Committed |
 
 ```bash
 cp config/audit.env.example config/audit.env
-cp config/projects.txt.example config/projects.txt   # optional
+cp config/projects.txt.example config/projects.txt
 ```
 
-Then open `config/audit.env` and fill it in. That is the whole setup:
+Both filled-in files are committed: one shared settings file is what makes several auditors' results comparable. Neither holds a credential.
 
-```bash
-./run-audit.sh --project some-project-id
-```
+## audit.env
 
-No `--config`, no `--org`, no exported variables. `run-audit.sh` reads
-`config/audit.env` unless you point `--config` somewhere else.
-
-## What goes in `audit.env`
-
-| Setting | Read by | Notes |
+| Key | Read by | Notes |
 |---|---|---|
-| `ORG_ID` | `run-audit.sh`, `audit-run.go` | The numeric ID, not the domain |
-| `AUDIT_PROJECT` | The setup steps | Owns the service account, has the audit APIs enabled |
-| `SA_EMAIL` | The setup steps | The identity the auditor impersonates |
-| `AUDIT_BRANCH` | The setup steps | The engagement branch: `<customer>-gcp-ig1-audit`. One for the whole audit, shared by the team |
-| `APPROVED_REGISTRIES` | V20, V22 | **Required.** Empty means both SKIP, which holds the audit below 100% complete |
-| `EXCLUDE_PROJECTS` | Target resolution | Regex on the project ID; defaults to `^sys-` |
-| `ALLOWED_LOCATIONS` | The residency checks | Optional; defaults to the continental US, and setting it **replaces** that list rather than extending it |
+| `ORG_ID` | `run-audit.sh`, `audit-run.go` | Numeric, not the domain |
+| `AUDIT_PROJECT` | Setup steps | **The project with the 17 APIs enabled.** Not necessarily the SA's own project |
+| `SA_EMAIL` | Setup steps | The identity impersonated |
+| `AUDIT_BRANCH` | Setup steps | `<customer>-gcp-ig1-audit`. Per engagement, not per auditor |
+| `APPROVED_REGISTRIES` | V20, V22 | **Required.** Blank → both SKIP → the pass cannot reach 100% |
+| `EXCLUDE_PROJECTS` | Target resolution | Regex on project ID. Default `^sys-`. `none` disables |
+| `ALLOWED_LOCATIONS` | Residency checks | Optional. Defaults to continental US; setting it **replaces** that list |
 
-`--org` beats `$ORG_ID`, which beats `ORG_ID` in this file.
+`--org` beats `$ORG_ID` beats `ORG_ID` in the file.
 
-Two rules worth stating plainly:
+`AUDIT_PROJECT` is read by the setup steps, **not by the audit**. The audit uses gcloud's active project. Set both.
 
-- **`none` is an answer.** If the customer has no approved registry list, no
-  backup project, no anything — write `none`. The dependent checks become
-  findings rather than skips, because a resource that does not exist cannot
-  meet the requirement, and a SKIP holds the audit below 100%.
-- **These are policy answers, not observations.** Ask the customer what their
-  approved registries are; do not read them off what happens to be deployed.
-  Inferring policy from the estate makes every estate compliant with itself.
+## projects.txt
 
-## What goes in `projects.txt`
-
-One project ID per line; `#` comments and blank lines ignored. It serves two
-purposes, and the second one catches people out:
+One ID per line, `#` comments ignored. Two uses:
 
 ```bash
-./run-audit.sh --projects config/projects.txt      # audit every one
-go run rollup.go -projects config/projects.txt     # the coverage denominator
+./run-audit.sh --no-org --projects config/projects.txt    # audit them
+./run-audit.sh --compile                                  # coverage denominator
 ```
 
-For the organization score this list is the **estate**, not the backlog — it
-is what "12 of 40 projects audited" divides by. Keep it complete even while
-you work through it one project at a time. Generate it from the live
-organization:
+It is the **estate**, not the backlog. Keep it complete while working through it.
 
-```bash
-gcloud projects list --filter='lifecycleState:ACTIVE' --format='value(projectId)' > config/projects.txt
-```
+## none is an answer
 
-## What is committed
+A resource that does not exist cannot meet a requirement. `none` makes the dependent checks FAIL — a result. Blank makes them SKIP, which holds the pass below 100%.
 
-All of it. This repository assumes it is private, so `config/audit.env` and
-`config/projects.txt` are committed along with the results in `audit-state/`.
-
-That is deliberate rather than lax. Everyone auditing the engagement works
-from one settings file, which is what makes their results comparable: if one
-auditor's `APPROVED_REGISTRIES` differs by a single prefix, their projects
-pass and fail on different criteria from everyone else's and nothing in the
-output says so.
-
-The `.example` files stay as the starting point for the next engagement.
-
-Nothing in this repository should ever hold a credential. The audit runs by
-impersonation precisely so that no service account key exists — committing one
-would break safeguard 5.2, which this repository exists to test.
+Never put a credential here. The audit runs by impersonation precisely so no key exists.

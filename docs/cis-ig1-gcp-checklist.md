@@ -2,7 +2,7 @@
 
 **Target:** Google Cloud Platform Organization
 **Scope:** GCP-actionable requirements only — 44 of 56 IG1 Safeguards
-**Companion document:** `cis-ig1-overview.md`
+**Parsed at runtime** by `compliance-report.go`. Edit the content; leave the structure.
 
 ---
 
@@ -23,7 +23,7 @@ Every requirement carries a marker showing how it gets checked and who does it.
 
 ⚙️ and 🔍 both run from the script — the difference is whether a machine can defend the verdict. 🖥️ and 👥 are the 102 no script touches.
 
-**👥 is the group to take into a room with people who know the account.** Those 72 are about how the estate is run rather than how it is configured, and the fastest way to answer them is usually to ask someone who has been on the engagement for years. [`training/09-process-interview.md`](training/09-process-interview.md) turns them into questions you can work through in a meeting.
+**👥 is the group to take into a room with people who know the account.** Those 72 are about how the estate is run rather than how it is configured, and the fastest way to answer them is usually to ask someone who has been on the engagement for years. `./run-audit.sh --interview` puts them one at a time — see [Phase 2](03-review-audit.md).
 
 ### Three states, not two
 

@@ -1,36 +1,32 @@
-# Documentation
+# docs
 
-| I want to… | Go to |
+## Phases — run in order
+
+| | | |
+|---|---|---|
+| 0 | [`01-setup.md`](01-setup.md) | Cloud Shell, settings, impersonation, smoke test |
+| 1 | [`02-api-audit.md`](02-api-audit.md) | The 188 automated checks |
+| 2 | [`03-review-audit.md`](03-review-audit.md) | `--review` per run, `--interview` once per engagement |
+| 3 | [`04-report-rollup.md`](04-report-rollup.md) | Compile every run into the five headline numbers |
+
+## Reference
+
+| | |
 |---|---|
-| Set up my shell before an audit | [Auditor setup](cis-ig1-auditor-setup.md) |
-| **Run it now, copy-paste** | **[Run sheet](cis-ig1-run-sheet.md)** |
-| Run an audit end to end, with context | [Runbook](cis-ig1-audit-runbook.md) |
-| Just run the scripts | [Scripted audit](cis-ig1-scripted-audit.md) |
-| Understand what IG1 is | [Overview](cis-ig1-overview.md) |
-| Record findings | [Checklist](cis-ig1-gcp-checklist.md) |
-| Run the check that proves an item | [CLI validation](cis-ig1-cli-validation.md) |
-| Fix something that failed | [Remediation reference](cis-ig1-remediation-reference.md) |
-| Track the engineering effort | [Tracker](cis-ig1-tracker.xlsx) |
-| Teach the team | [Training](training/) |
-| See what benchmark work counts toward IG1 | [Benchmark contribution](cis-ig1-benchmark-overlap.md) |
-| Audit one more project, mid-engagement | [Project checklist](cis-ig1-project-checklist.md) |
-| Know which APIs to enable before running | [Required APIs](cis-ig1-required-apis.md) |
+| [`cis-ig1-cli-validation.md`](cis-ig1-cli-validation.md) | All 188 checks: command, pass criterion, requirement |
+| [`cis-ig1-gcp-checklist.md`](cis-ig1-gcp-checklist.md) | All 290 requirements, grouped by safeguard |
+| [`cis-ig1-remediation-reference.md`](cis-ig1-remediation-reference.md) | Example Terraform per finding |
+| [`cis-ig1-required-apis.md`](cis-ig1-required-apis.md) | The 17 APIs the quota project needs, with evidence |
+| [`known-issues.md`](known-issues.md) | Defects found in the field, with workarounds |
+| `cis-ig1-tracker.xlsx` | Effort tracker. Imports into Sheets |
 
-## How the checklist is marked
+## Do not restructure these two
 
-Every one of the 290 requirements carries a marker:
+`audit-run.go` and `compliance-report.go` parse them at runtime:
 
-| | Group | Count | How |
-|---|---|---|---|
-| ⚙️ | Automated | 96 | `audit-run.go` scores it |
-| 🔍 | CLI + human | 92 | Script runs it, you judge the output |
-| 🖥️ | GCP manual | 30 | Console, image build, or a test you perform |
-| 👥 | Process & people | 72 | A conversation and a document |
+```
+audit-run.go          -doc    docs/cis-ig1-cli-validation.md
+compliance-report.go  -file   docs/cis-ig1-gcp-checklist.md
+```
 
-The last two are the 102 no script touches. 👥 is the group to take into a room with people who know the account — [`training/09-process-interview.md`](training/09-process-interview.md) turns them into questions.
-
-## Scope
-
-IG1 is enterprise-wide. Of its 56 safeguards, **44** are GCP-actionable and appear here; **12** have no GCP surface (training, end-user devices, removable media) and are owned elsewhere — [Appendix A](cis-ig1-gcp-checklist.md#appendix-a--safeguards-excluded-from-this-checklist).
-
-All 290 requirements here are yours, including the 102 manual ones — each concerns the GCP estate.
+Their heading levels, table shapes and `V`-number links are the parser's input. Edit the content; leave the structure alone, or the checks stop being found.
