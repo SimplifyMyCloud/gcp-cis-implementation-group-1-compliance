@@ -111,7 +111,7 @@ audits/
     evidence/run.log  audit.env  targets.txt
 ```
 
-Aggregate reports are built across every target by `--compile` in [Phase 3](04-report-rollup.md), and land in `audits/` beside the target directories.
+Aggregate reports are built across every target by `--compile` in [Phase 3](04-report-rollup.md), and land in `reports/` beside `audits/`.
 
 Every pass finishes below 100% completion. REVIEW checks are undecided by design — that is [Phase 2](03-review-audit.md). **A target below 100% appears in no report.**
 

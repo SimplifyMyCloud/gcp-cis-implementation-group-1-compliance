@@ -16,10 +16,13 @@
 #       evidence/results/<project-id>.json
 #       evidence/run.log  audit.env  targets.txt
 #
-# Aggregate reports — the remediation plan, the compliance score, the
-# safeguard status — are built across every target by --compile, and land in
-# audits/ beside the target directories. A target below 100% completion
-# appears in none of them; --incomplete lists those.
+#   reports/                               built by --compile
+#     remediation-plan.md  remediation-plan.csv
+#     compliance-score.md  compliance-score.json
+#     safeguards.md        safeguards.json
+#
+# audits/ is the evidence, reports/ is what you hand over. A target below
+# 100% completion appears in no report; --incomplete lists those.
 #
 #   ./run-audit.sh                                # organization only
 #   ./run-audit.sh --project my-proj              # org + one project (repeatable)
@@ -171,7 +174,12 @@ targets_under() {  # $1 root
 # Neither touches GCP. The interview asks the auditor; the compile reads what
 # is already on disk. Both work on the whole engagement rather than one run,
 # so they take no run directory.
-STATE="$OUT"                     # reports sit beside the target directories
+# Evidence and deliverables are kept apart: audits/ holds one directory per
+# target, reports/ holds what you hand over. Keeping the generated reports out
+# of the tree that is scanned also means a report can never be mistaken for a
+# pack.
+STATE="$OUT"                              # where the target directories are
+REPORTS="$(dirname "$OUT")/reports"       # where the compiled reports go
 ANSWERS="$STATE/manual-answers.json"
 HERE=$(cd "$(dirname "$0")" && pwd)
 
@@ -202,36 +210,37 @@ if $DO_COMPILE; then
     echo "      5 fully automated safeguards can be scored"
   fi
 
+  mkdir -p "$REPORTS"
   echo
   echo "=== Remediation plan and compliance score"
   go run rollup.go -in "$OUT" \
-    -out        "$STATE/remediation-plan.md" \
-    -csv        "$STATE/remediation-plan.csv" \
-    -score-md   "$STATE/compliance-score.md" \
-    -score-json "$STATE/compliance-score.json" \
+    -out        "$REPORTS/remediation-plan.md" \
+    -csv        "$REPORTS/remediation-plan.csv" \
+    -score-md   "$REPORTS/compliance-score.md" \
+    -score-json "$REPORTS/compliance-score.json" \
     ${proj[@]+"${proj[@]}"}
 
   echo
   echo "=== Safeguard status"
   go run compliance-report.go -runs "$OUT" \
-    -safeguards-md   "$STATE/safeguards.md" \
-    -safeguards-json "$STATE/safeguards.json" \
+    -safeguards-md   "$REPORTS/safeguards.md" \
+    -safeguards-json "$REPORTS/safeguards.json" \
     ${ans[@]+"${ans[@]}"} ${proj[@]+"${proj[@]}"}
 
   echo
   echo "================================================================"
-  grep -m1 -o 'SCORE: [^*]*' "$STATE/compliance-score.md" 2>/dev/null || true
-  grep -m1 -o 'SAFEGUARDS: [^*]*' "$STATE/safeguards.md"  2>/dev/null || true
-  grep -m1 -o 'PROJECTS: [^*]*'   "$STATE/safeguards.md"  2>/dev/null || true
-  grep -m1 -o 'ORGANIZATION: [^*]*' "$STATE/safeguards.md" 2>/dev/null || true
-  grep -m1 -o 'PROJECTS, BY SAFEGUARD: [^*]*' "$STATE/safeguards.md" 2>/dev/null || true
+  grep -m1 -o 'SCORE: [^*]*' "$REPORTS/compliance-score.md" 2>/dev/null || true
+  grep -m1 -o 'SAFEGUARDS: [^*]*' "$REPORTS/safeguards.md"  2>/dev/null || true
+  grep -m1 -o 'PROJECTS: [^*]*'   "$REPORTS/safeguards.md"  2>/dev/null || true
+  grep -m1 -o 'ORGANIZATION: [^*]*' "$REPORTS/safeguards.md" 2>/dev/null || true
+  grep -m1 -o 'PROJECTS, BY SAFEGUARD: [^*]*' "$REPORTS/safeguards.md" 2>/dev/null || true
   echo "================================================================"
-  echo "  $STATE/remediation-plan.md    the work list, pivoted by finding"
-  echo "  $STATE/remediation-plan.csv   the same, for the tracker"
-  echo "  $STATE/compliance-score.md    coverage and the three numbers"
-  echo "  $STATE/compliance-score.json  the same, for the dashboard"
-  echo "  $STATE/safeguards.md          which of the 56 pass, and what blocks the rest"
-  echo "  $STATE/safeguards.json        the same, for the dashboard"
+  echo "  $REPORTS/remediation-plan.md    the work list, pivoted by finding"
+  echo "  $REPORTS/remediation-plan.csv   the same, for the tracker"
+  echo "  $REPORTS/compliance-score.md    coverage and the three numbers"
+  echo "  $REPORTS/compliance-score.json  the same, for the dashboard"
+  echo "  $REPORTS/safeguards.md          which of the 56 pass, and what blocks the rest"
+  echo "  $REPORTS/safeguards.json        the same, for the dashboard"
   # Excluded targets are in no report. Say how many, and how to see them.
   part=0
   while IFS= read -r d; do

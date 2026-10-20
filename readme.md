@@ -21,7 +21,7 @@ A check ends in one of seven verdicts. PASS, FAIL and N/A are final. REVIEW mean
 
 A pass is complete when nothing is undecided. **A target below 100% appears in no report** — not its score, not its findings. An unfinished audit is work outstanding, not a result, and `--incomplete` is how you find it.
 
-Results are filed by what was audited, not when: `audits/gcp-org/` and `audits/<project-id>/`, one directory each, replaced by a re-audit.
+Results are filed by what was audited, not when: `audits/gcp-org/` and `audits/<project-id>/`, one directory each, replaced by a re-audit. Compiled reports land in `reports/` — `audits/` is the evidence, `reports/` is what you hand over.
 
 A safeguard passes when every requirement under it passes, including the manual ones. A requirement failing in any audited project fails the safeguard estate-wide.
 

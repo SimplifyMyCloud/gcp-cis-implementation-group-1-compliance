@@ -67,7 +67,7 @@ Export it again for every project you move to. Leave it unset and the commands s
 The service account already exists. What each run needs is somewhere to put its output, and a config file.
 
 ```bash
-mkdir -p ./audit-state/projects
+mkdir -p ./audits/manual
 ```
 
 ```bash
@@ -1486,7 +1486,7 @@ See V46 and V50.
 # Written into the audit pack (audit-run.go sets AUDIT_PACK_DIR from -pack),
 # not the working directory: this file is the organization's complete IAM
 # inventory and belongs with the rest of the evidence.
-out="${AUDIT_PACK_DIR:-./audit-state}"
+out="${AUDIT_PACK_DIR:-./audits}"
 mkdir -p "$out"
 gcloud asset search-all-iam-policies --scope=organizations/$ORG_ID \
   --format="table(resource,policy.bindings.role)" > "$out/iam-inventory.txt"

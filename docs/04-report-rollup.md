@@ -30,7 +30,7 @@ Without the interview only 5 of 44 safeguards can be scored.
 
 ## Output
 
-Six files in `audits/`, beside the target directories:
+Six files in `reports/`, beside `audits/`. The audits are the evidence; the reports are what you hand over.
 
 | File | Contents |
 |---|---|
@@ -70,11 +70,11 @@ Each target is scored against the safeguards **its own pass judges**. A project 
 ## Reading the safeguard report
 
 ```bash
-sed -n '/## By target/,/^Mean/p' audits/safeguards.md
+sed -n '/## By target/,/^Mean/p' reports/safeguards.md
 ```
 
 ```bash
-sed -n '/## What is blocking/,$p' audits/safeguards.md
+sed -n '/## What is blocking/,$p' reports/safeguards.md
 ```
 
 Blocking entries name the projects:
@@ -94,7 +94,7 @@ Dev projects only → fix in flight. Production named → live exposure. Both �
 Second denominator, same runs:
 
 ```bash
-go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/production.txt -safeguards-md audits/safeguards-production.md -safeguards-json audits/safeguards-production.json
+go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/production.txt -safeguards-md reports/safeguards-production.md -safeguards-json reports/safeguards-production.json
 ```
 
 ---
@@ -102,7 +102,7 @@ go run compliance-report.go -runs audits -answers audits/manual-answers.json -pr
 ## Commit
 
 ```bash
-git pull && git add audits config && git commit -m "Rollup $(date +%Y-%m-%d)" && git push
+git pull && git add audits reports config && git commit -m "Rollup $(date +%Y-%m-%d)" && git push
 ```
 
 ---
