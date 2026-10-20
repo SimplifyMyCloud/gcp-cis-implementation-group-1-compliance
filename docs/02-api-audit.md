@@ -23,7 +23,7 @@ V112 appears in both. Each report lists all 188 in order; the other pass's check
 ./run-audit.sh
 ```
 
-No arguments. Output lands in `audit-state/runs/<timestamp>/`.
+No arguments. Output lands in `audits/gcp-org/`.
 
 Abort conditions, printed in the header:
 
@@ -41,7 +41,7 @@ At the end:
 | `OK with errors` | Proceed; errors are decidable in Phase 2 |
 | `DEGRADED` / `UNRELIABLE` | **Discard the run.** Results are not findings |
 
-Note the run directory from the `Next:` line.
+The `Next:` line names the review command.
 
 ---
 
@@ -79,20 +79,14 @@ tmux new -s audit
 
 Start the run inside tmux — survives an SSH drop, not a session end. Keep the workstation awake. Batch so each run completes in a sitting.
 
-**Results are filed into `report/` only after the last project.** Ctrl-C mid-run leaves them unfiled under `<run>/.packs/`:
-
-```bash
-RUN=audit-state/runs/<timestamp>
-mkdir -p "$RUN/report/03-projects" "$RUN/evidence/results"
-for d in "$RUN"/.packs/projects/*/; do p=$(basename "$d"); [ -f "$d/01-automated-results.md" ] && mv "$d/01-automated-results.md" "$RUN/report/03-projects/$p.md"; [ -f "$d/results.json" ] && mv "$d/results.json" "$RUN/evidence/results/$p.json"; done
-```
+**Results are filed only after the last project.** A run stages its output in a temporary directory and files it per target at the end, so Ctrl-C mid-run loses the lot. Batch long runs rather than interrupting them.
 
 ---
 
 ## 4. Commit
 
 ```bash
-git pull && git add audit-state/runs/<timestamp> && git commit -m "API audit: <target>" && git push
+git pull && git add audits/<target> && git commit -m "API audit: <target>" && git push
 ```
 
 Name the path. Never `git add -A`.
@@ -101,20 +95,25 @@ Name the path. Never `git add -A`.
 
 ## Output
 
+One directory per target, named for what was audited. A re-audit replaces it: the newest result is the only one that counts, and git holds what came before.
+
 ```
-audit-state/runs/<timestamp>/
-  report/
-    01-remediation-plan.md
-    02-organization/01-automated-results.md
-    03-projects/<project-id>.md
-    04-compliance-score.md  04-compliance-score.json
-    remediation-plan.csv
-  evidence/
-    results/<pass>.json          read by Phase 2
-    audit.env  targets.txt  run.log  iam-inventory.txt  excluded.txt
+audits/
+  gcp-org/
+    report/02-organization/01-automated-results.md
+    report/02-organization/02-manual-gcp-tasks.md
+    report/02-organization/03-manual-process.md
+    evidence/results/organization.json          read by Phase 2
+    evidence/run.log  audit.env  targets.txt  iam-inventory.txt
+  <project-id>/
+    report/03-projects/<project-id>.md
+    evidence/results/<project-id>.json          read by Phase 2
+    evidence/run.log  audit.env  targets.txt
 ```
 
-Every pass finishes below 100% completion. REVIEW checks are undecided by design — that is [Phase 2](03-review-audit.md).
+Aggregate reports are built across every target by `--compile` in [Phase 3](04-report-rollup.md), and land in `audits/` beside the target directories.
+
+Every pass finishes below 100% completion. REVIEW checks are undecided by design — that is [Phase 2](03-review-audit.md). **A target below 100% appears in no report.**
 
 ---
 
@@ -128,4 +127,4 @@ Every pass finishes below 100% completion. REVIEW checks are undecided by design
 | `--all` | Every ACTIVE project in the org |
 | `--skip V96` | Omit a check that hangs. Reported as SKIP |
 | `--parallel N` | Checks at once. Default 8 |
-| `--out DIR` | Default `./audit-state/runs` |
+| `--out DIR` | Default `./audits` |

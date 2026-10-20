@@ -7,9 +7,10 @@ Audits a Google Cloud organization against **CIS Controls v8.1 Implementation Gr
 ```bash
 ./run-audit.sh                         # organization pass, 86 checks
 ./run-audit.sh --no-org --project ID   # project pass, 103 checks
-./run-audit.sh --review <run dir>      # decide what the machine could not
+./run-audit.sh --incomplete            # what is below 100%, and in no report
+./run-audit.sh --review TARGET         # decide what the machine could not
 ./run-audit.sh --interview             # the 114 a command cannot answer
-./run-audit.sh --compile               # every report, across every run
+./run-audit.sh --compile               # every report, across every target
 ```
 
 ## How it works
@@ -18,7 +19,9 @@ The 188 checks are not stored in code. `audit-run.go` parses them out of [`docs/
 
 A check ends in one of seven verdicts. PASS, FAIL and N/A are final. REVIEW means it ran clean and needs a human. SKIP, ERROR and DENIED mean it could not answer; those are decidable by the auditor too, with the failure recorded beneath the verdict.
 
-A pass is complete when nothing is undecided. **Only complete passes count towards any total** — an unreconciled run is work outstanding, not non-compliance.
+A pass is complete when nothing is undecided. **A target below 100% appears in no report** — not its score, not its findings. An unfinished audit is work outstanding, not a result, and `--incomplete` is how you find it.
+
+Results are filed by what was audited, not when: `audits/gcp-org/` and `audits/<project-id>/`, one directory each, replaced by a re-audit.
 
 A safeguard passes when every requirement under it passes, including the manual ones. A requirement failing in any audited project fails the safeguard estate-wide.
 

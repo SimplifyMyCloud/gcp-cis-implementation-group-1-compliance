@@ -177,13 +177,14 @@ func main() {
 		auto := map[string]verdict3{}
 		autoBy := map[string]map[string]verdict3{}
 		var projects []projectStatus
+		var skipped []exclusion
 		if *runs != "" {
-			a, bt, p, rerr := loadRuns(*runs)
+			a, bt, p, ex, rerr := loadRuns(*runs)
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "compliance-report: %v\n", rerr)
 				os.Exit(2)
 			}
-			auto, autoBy, projects = a, bt, p
+			auto, autoBy, projects, skipped = a, bt, p, ex
 		}
 		af := answerFile{Answers: map[string]answer{}}
 		if *answers != "" {
@@ -204,6 +205,7 @@ func main() {
 			total = n
 		}
 		doc := buildSafeguards(safeguards, excludedSGs, auto, autoBy, af, projects, total)
+		doc.Skipped = skipped
 		if *sgJSON != "" {
 			b, jerr := json.MarshalIndent(doc, "", "  ")
 			if jerr != nil {
@@ -756,7 +758,7 @@ type projectStatus struct {
 // loadRuns walks a directory of runs and returns the worst verdict seen for
 // each check, plus per-project status. The newest file for a target wins, the
 // same rule rollup.go applies: a target audited twice is counted once.
-func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3, []projectStatus, error) {
+func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3, []projectStatus, []exclusion, error) {
 	// Which pass wins when a target was audited more than once — and it will
 	// be, because a fix is promoted dev → production and the project is
 	// re-audited afterwards. The rule is rollup.go's: a COMPLETE pass beats an
@@ -796,7 +798,7 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 		return nil
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	verdicts := map[string]verdict3{}
@@ -805,6 +807,7 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 	// there rather than only the requirement.
 	byTarget := map[string]map[string]verdict3{}
 	var projects []projectStatus
+	var excluded []exclusion
 	names := make([]string, 0, len(newest))
 	for n := range newest {
 		names = append(names, n)
@@ -821,15 +824,17 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 			continue
 		}
 		st := projectStatus{name: name, complete: true, passing: true}
+		var seen []struct {
+			id string
+			v  verdict3
+		}
+		final, total := 0, 0
 		for _, r := range run.Results {
 			label := r.Verdict
 			// An auditor's decision stands in for whatever the machine reached,
 			// exactly as the report renders it.
 			if d, ok := run.Decisions[r.ID]; ok && d.Verdict != "" {
 				label = d.Verdict
-			}
-			if len(r.Refs) > 0 {
-				continue // a cross-reference: its referents already count
 			}
 			var v verdict3
 			switch strings.ToUpper(label) {
@@ -848,21 +853,48 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 			if v == vcOpen {
 				st.complete, st.passing = false, false
 			}
-			if prev, ok := verdicts[r.ID]; ok {
-				verdicts[r.ID] = worse(prev, v)
-			} else {
-				verdicts[r.ID] = v
+			total++
+			if v != vcOpen {
+				final++
 			}
-			if byTarget[r.ID] == nil {
-				byTarget[r.ID] = map[string]verdict3{}
+			if len(r.Refs) > 0 {
+				continue // a cross-reference: its referents already count
 			}
-			byTarget[r.ID][name] = v
+			seen = append(seen, struct {
+				id string
+				v  verdict3
+			}{r.ID, v})
 		}
 		if run.Scope == "project" {
 			projects = append(projects, st)
 		}
+
+		// Only a finished audit contributes. An unreconciled pass has checks
+		// nobody has judged, so counting its verdicts would report a partial
+		// view as a result.
+		if !st.complete {
+			excluded = append(excluded, exclusion{name, pctOf(final, total)})
+			continue
+		}
+		for _, s := range seen {
+			if prev, ok := verdicts[s.id]; ok {
+				verdicts[s.id] = worse(prev, s.v)
+			} else {
+				verdicts[s.id] = s.v
+			}
+			if byTarget[s.id] == nil {
+				byTarget[s.id] = map[string]verdict3{}
+			}
+			byTarget[s.id][name] = s.v
+		}
 	}
-	return verdicts, byTarget, projects, nil
+	return verdicts, byTarget, projects, excluded, nil
+}
+
+// exclusion is a target left out of every report, and how far it got.
+type exclusion struct {
+	Name string `json:"name"`
+	Pct  int    `json:"completion"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1050,6 +1082,7 @@ type sgDoc struct {
 	Org        *targetResult  `json:"organization,omitempty"`
 	ProjectAvg int            `json:"projects_pct_passing_mean"`
 	Targets    []targetResult `json:"targets"`
+	Skipped    []exclusion    `json:"excluded_below_100,omitempty"`
 	Detail     []sgResult     `json:"detail"`
 	Unanswered []string       `json:"unanswered_safeguards,omitempty"`
 }
@@ -1300,6 +1333,17 @@ func renderSafeguards(doc sgDoc) string {
 
 	b.WriteString("Projects are counted two ways. **Audited** is an estate-coverage number: the pass " +
 		"reached a final verdict on every check. **Passing** is stricter — audited, and nothing failed.\n\n")
+
+	if len(doc.Skipped) > 0 {
+		var names []string
+		for _, e := range doc.Skipped {
+			names = append(names, fmt.Sprintf("`%s` (%d%%)", e.Name, e.Pct))
+		}
+		fmt.Fprintf(&b, "> ⚠️ **%d target(s) excluded, below 100%% completion:** %s. An audit that is "+
+			"not finished is not a result — it contributes to nothing here. "+
+			"`./run-audit.sh --incomplete` lists what is outstanding.\n\n",
+			len(doc.Skipped), strings.Join(names, ", "))
+	}
 
 	if len(doc.Unanswered) > 0 {
 		fmt.Fprintf(&b, "> ⚠️ **%d safeguard(s) cannot yet be scored**: `%s`. Run the interview for the "+

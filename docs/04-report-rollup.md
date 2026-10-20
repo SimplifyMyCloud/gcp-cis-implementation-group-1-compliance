@@ -6,14 +6,17 @@ Compiles every run into one set of reports. Reads what is on disk; calls nothing
 
 ## Preflight
 
-| | Check |
-|---|---|
-| Every pass at 100% | `grep -o 'SCORE: [^*]*' audit-state/runs/*/report/*/*.md audit-state/runs/*/report/*.md 2>/dev/null \| grep -c 'completion 100%'` |
-| Interview done | `test -f audit-state/manual-answers.json && echo yes` |
-| Estate list current | `wc -l < config/projects.txt` |
-| Results readable | `ls audit-state/runs/*/evidence/results/*.json \| wc -l` |
+```bash
+./run-audit.sh --incomplete
+```
 
-A pass below 100% is excluded from every total and named in the output. The interview is required for the safeguard figures.
+**Anything listed there is in no report** — not its score, not its findings. Clear it with `--review` first, or accept that it is absent.
+
+```bash
+test -f audits/manual-answers.json && echo "interview done"
+```
+
+Without the interview only 5 of 44 safeguards can be scored.
 
 ---
 
@@ -27,7 +30,7 @@ A pass below 100% is excluded from every total and named in the output. The inte
 
 ## Output
 
-Six files in `audit-state/`:
+Six files in `audits/`, beside the target directories:
 
 | File | Contents |
 |---|---|
@@ -57,7 +60,7 @@ PROJECTS, BY SAFEGUARD: x% compliant on average
 | SAFEGUARDS | 56 IG1 safeguards | Yes |
 | PROJECTS audited | `config/projects.txt` — passes at 100% | — |
 | PROJECTS passing | `config/projects.txt` — at 100% with zero FAIL | — |
-| ORGANIZATION | 27 safeguards the org pass judges | No |
+| ORGANIZATION | 27 safeguards the org pass judges. **Absent if the org pass is below 100%** | No |
 | PROJECTS BY SAFEGUARD | 35 safeguards a project pass judges, averaged over finished audits | No |
 
 Each target is scored against the safeguards **its own pass judges**. A project pass reaches 35 of 56, the org pass 27. Seven safeguards have no project-scope check; twelve have no GCP surface. Do not score a target out of 56.
@@ -67,11 +70,11 @@ Each target is scored against the safeguards **its own pass judges**. A project 
 ## Reading the safeguard report
 
 ```bash
-sed -n '/## By target/,/^Mean/p' audit-state/safeguards.md
+sed -n '/## By target/,/^Mean/p' audits/safeguards.md
 ```
 
 ```bash
-sed -n '/## What is blocking/,$p' audit-state/safeguards.md
+sed -n '/## What is blocking/,$p' audits/safeguards.md
 ```
 
 Blocking entries name the projects:
@@ -91,7 +94,7 @@ Dev projects only → fix in flight. Production named → live exposure. Both �
 Second denominator, same runs:
 
 ```bash
-go run compliance-report.go -runs audit-state/runs -answers audit-state/manual-answers.json -projects config/production.txt -safeguards-md audit-state/safeguards-production.md -safeguards-json audit-state/safeguards-production.json
+go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/production.txt -safeguards-md audits/safeguards-production.md -safeguards-json audits/safeguards-production.json
 ```
 
 ---
@@ -99,7 +102,7 @@ go run compliance-report.go -runs audit-state/runs -answers audit-state/manual-a
 ## Commit
 
 ```bash
-git pull && git add audit-state config && git commit -m "Rollup $(date +%Y-%m-%d)" && git push
+git pull && git add audits config && git commit -m "Rollup $(date +%Y-%m-%d)" && git push
 ```
 
 ---
@@ -110,4 +113,5 @@ git pull && git add audit-state config && git commit -m "Rollup $(date +%Y-%m-%d
 - **56 is the honest denominator** only because the 12 off-platform safeguards are answered in the interview. The 44 GCP-actionable subset is also reported.
 - **Audited ≠ passing.** Audited is coverage; passing is audited with zero FAIL.
 - **Unanswered is not failing.** Unscoreable safeguards are listed by name.
+- **An unfinished audit is not a result.** A target below 100% is excluded from every report, and named at the top of each one so a number cannot be quoted without knowing what was left out.
 - **Label the two 44s.** 44 projects and 44 GCP-actionable safeguards are different numbers.

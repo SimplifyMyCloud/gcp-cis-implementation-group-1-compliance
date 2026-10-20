@@ -299,7 +299,7 @@ func aggregate(packs []packInfo, min int) ([]finding, int, int) {
 	usable, excluded := 0, 0
 
 	for _, p := range packs {
-		if !p.usable() {
+		if !p.usable() || !p.complete() {
 			excluded++
 			continue
 		}
@@ -351,13 +351,15 @@ func writePlan(path string, fs []finding, packs []packInfo, usable, excluded int
 	fmt.Fprintf(&b, "Compiled from %d audit pack(s), %d usable.\n\n", len(packs), usable)
 
 	if excluded > 0 {
-		fmt.Fprintf(&b, "> ⚠️ **%d pack(s) excluded as unreliable.** Their runs hit permission or "+
-			"execution failures, so their results are not findings — counting them would "+
-			"invent work that may not exist. Re-run those projects.\n\n", excluded)
-		b.WriteString("| Excluded | Run status |\n|---|---|\n")
+		fmt.Fprintf(&b, "> ⚠️ **%d target(s) excluded.** An audit below 100%% completion is not a "+
+			"result: its remaining checks are unjudged, so its findings are not yet findings. "+
+			"A run that hit permission or execution failures is excluded for the same reason — "+
+			"counting it would invent work that may not exist.\n\n", excluded)
+		b.WriteString("| Excluded | Completion | Run status |\n|---|---|---|\n")
 		for _, p := range packs {
-			if !p.usable() {
-				fmt.Fprintf(&b, "| `%s` | %s |\n", p.name, p.status)
+			if !p.usable() || !p.complete() {
+				c, _, _ := p.percents()
+				fmt.Fprintf(&b, "| `%s` | %d%% | %s |\n", p.name, c, p.status)
 			}
 		}
 		b.WriteString("\n")
@@ -431,6 +433,9 @@ func writePlan(path string, fs []finding, packs []packInfo, usable, excluded int
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].fail > sorted[j].fail })
 	b.WriteString("| Target | Fail | Pass | Completion | Run |\n|---|---|---|---|---|\n")
 	for _, p := range sorted {
+		if !p.usable() || !p.complete() {
+			continue
+		}
 		c, _, _ := p.percents()
 		fmt.Fprintf(&b, "| `%s` | %d | %d | %d%% | %s |\n", p.name, p.fail, p.passed(), c, p.status)
 	}

@@ -4,20 +4,44 @@ Human in the loop. Two separate sessions:
 
 | | Decides | Count | Scope |
 |---|---|---|---|
-| `--review` | Checks the machine ran but cannot judge, and checks it could not answer | ~45 per pass | Per run |
+| `--review` | Checks the machine ran but cannot judge, and checks it could not answer | ~45 per pass | Per target |
 | `--interview` | Requirements no command can answer | 114 | Once per engagement |
 
-A pass reaches 100% completion only when `--review` leaves nothing undecided. **A pass below 100% counts towards no statistic.**
+A pass reaches 100% completion only when `--review` leaves nothing undecided. **A target below 100% appears in no report at all** — not its score, not its findings. `./run-audit.sh --incomplete` lists them.
 
 ---
 
-## 1. Review a run
+## 1. See what is outstanding
 
 ```bash
-./run-audit.sh --review audit-state/runs/<timestamp>
+./run-audit.sh --incomplete
 ```
 
-Walks every undecided check, organization pass first, then each project. Non-cross-reference checks in V order, then cross-references.
+```
+3 of 14 target(s) below 100% — excluded from all reports
+
+TARGET                         COMPLETION  OUTSTANDING   REVIEW WITH
+gcp-org                        74%         22 REVIEW     ./run-audit.sh --review gcp-org
+nyc3-prod-api                  54%         47 REVIEW     ./run-audit.sh --review nyc3-prod-api
+```
+
+## 2. Review a target
+
+```bash
+./run-audit.sh --review nyc3-prod-api
+```
+
+```bash
+./run-audit.sh --review gcp-org
+```
+
+Or every target still outstanding, in order:
+
+```bash
+./run-audit.sh --review
+```
+
+Non-cross-reference checks in V order, then cross-references. A directory path is also accepted, so results from an older layout stay reviewable.
 
 | Key | Action |
 |---|---|
@@ -48,14 +72,16 @@ Cross-references resolve from their referents. Decide the referents and most res
 ### Confirm
 
 ```bash
-grep -m1 -o 'SCORE: [^*]*' audit-state/runs/<timestamp>/report/03-projects/PROJECT_ID.md
+./run-audit.sh --incomplete
 ```
+
+Nothing listed means every target is at 100%.
 
 `completion 100%` is the gate. Pass and fail are the result.
 
 ---
 
-## 2. The interview
+## 3. The interview
 
 Once per engagement, organization-wide.
 
@@ -72,7 +98,7 @@ Once per engagement, organization-wide.
 | `s` | Defer for this session only |
 | `q` | Save and exit |
 
-Saved to `audit-state/manual-answers.json` after every answer. Resumable.
+Saved to `audits/manual-answers.json` after every answer. Resumable.
 
 No evidence is captured — attach it to the engagement record separately.
 
@@ -80,10 +106,10 @@ No evidence is captured — attach it to the engagement record separately.
 
 ---
 
-## 3. Commit
+## 4. Commit
 
 ```bash
-git pull && git add audit-state && git commit -m "Review: <target>" && git push
+git pull && git add audits && git commit -m "Review: <target>" && git push
 ```
 
 ---
@@ -92,5 +118,5 @@ git pull && git add audit-state && git commit -m "Review: <target>" && git push
 
 - **Unanswered is not failing.** An undecided check leaves its safeguard unscoreable, named in the report, never counted against the customer.
 - **A requirement failing in any project fails the safeguard** estate-wide. Per-project verdicts stay visible.
-- **Only 100%-complete passes count** towards coverage, the safeguard numbers or the averages.
+- **A target below 100% is in no report** — excluded from the score, the safeguard numbers and the remediation plan. `--incomplete` is how you find it.
 - **Re-audit after remediation.** A promoted fix moves nothing until that project's new pass reaches 100%.

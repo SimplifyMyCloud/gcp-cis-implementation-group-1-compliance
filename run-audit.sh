@@ -1,26 +1,25 @@
 #!/usr/bin/env bash
 #
-# Runs a complete CIS IG1 audit and files it into one dated directory:
+# Runs a complete CIS IG1 audit and files the result by TARGET, not by date.
+# One directory per thing audited; a re-audit replaces it, because the newest
+# result is the only one that counts and git holds what came before.
 #
-#   audit-state/runs/2026-09-14_12-48-05/
-#     report/                         what the auditor reads, in reading order
-#       01-remediation-plan.md
-#       02-organization/
-#         01-automated-results.md
-#         02-manual-gcp-tasks.md
-#         03-manual-process.md
-#       03-projects/
-#         <project-id>.md             one per project audited
-#       04-compliance-score.md          the three numbers, for people
-#       04-compliance-score.json        the same, for the dashboard
-#       remediation-plan.csv          import into the tracker
-#     evidence/                       the audit trail behind the report
-#       results/                      each pass's results and review decisions (read by --review)
-#       audit.env                     placeholder values used
-#       targets.txt                   projects audited
-#       run.log                       full console output
-#       iam-inventory.txt             V86
-#       excluded.txt                  projects skipped by EXCLUDE_PROJECTS (default ^sys-)
+#   audits/
+#     gcp-org/
+#       report/02-organization/01-automated-results.md
+#       report/02-organization/02-manual-gcp-tasks.md
+#       report/02-organization/03-manual-process.md
+#       evidence/results/organization.json   read by --review
+#       evidence/run.log  audit.env  targets.txt  iam-inventory.txt
+#     <project-id>/
+#       report/03-projects/<project-id>.md
+#       evidence/results/<project-id>.json
+#       evidence/run.log  audit.env  targets.txt
+#
+# Aggregate reports — the remediation plan, the compliance score, the
+# safeguard status — are built across every target by --compile, and land in
+# audits/ beside the target directories. A target below 100% completion
+# appears in none of them; --incomplete lists those.
 #
 #   ./run-audit.sh                                # organization only
 #   ./run-audit.sh --project my-proj              # org + one project (repeatable)
@@ -47,7 +46,8 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage: ./run-audit.sh [--project ID ...|--projects FILE|--all] [options]
-       ./run-audit.sh --review RUN_DIR
+       ./run-audit.sh --review [TARGET]
+       ./run-audit.sh --incomplete
        ./run-audit.sh --interview
        ./run-audit.sh --compile
 
@@ -66,16 +66,18 @@ Options
   --parallel N       Checks run at once (default 8). --parallel 1 runs them in order.
   --interview        Put every requirement no command can answer to the auditor.
                      114 questions, saved as you go, resumable.
+  --incomplete       List every target below 100%, what is outstanding, and the
+                     command to clear it. Those targets appear in no report.
   --compile          Build every report from every run: the remediation plan,
                      the compliance score and the safeguard status.
   --config FILE      Settings file (default: config/audit.env)
   --org ID           Organization ID (default: ORG_ID from the settings file, or $ORG_ID)
-  --out DIR          Where run directories are created (default: ./audit-state/runs)
+  --out DIR          Where results are written (default: ./audits)
   --no-org           Skip the organization pass (project passes only)
   -h, --help         This message
 
 Review
-  --review RUN_DIR   After a run: put each REVIEW check to you for PASS or FAIL,
+  --review [TARGET]  After a run: put each REVIEW check to you for PASS or FAIL,
                      organization first, then each project. Saved as you go; q
                      quits and --review again resumes. Rebuilds the reports and
                      the remediation plan. Needs nothing else — no --config.
@@ -86,7 +88,8 @@ audit everything). They are listed in evidence/excluded.txt.
 USAGE
 }
 
-CONFIG="" ORG="${ORG_ID:-}" OUT="./audit-state/runs" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8 REVIEW_DIR="" DO_COMPILE=false DO_INTERVIEW=false
+CONFIG="" ORG="${ORG_ID:-}" OUT="./audits" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8
+DO_REVIEW=false REVIEW_TARGET="" DO_COMPILE=false DO_INTERVIEW=false DO_INCOMPLETE=false
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -99,9 +102,11 @@ while [[ $# -gt 0 ]]; do
     --no-org)   DO_ORG=false; shift ;;
     --skip)     SKIP="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
-    --review)   REVIEW_DIR="$2"; shift 2 ;;
+    --review)   DO_REVIEW=true
+                if [[ $# -gt 1 && "$2" != -* ]]; then REVIEW_TARGET="$2"; shift 2; else shift; fi ;;
     --compile)  DO_COMPILE=true; shift ;;
     --interview) DO_INTERVIEW=true; shift ;;
+    --incomplete) DO_INCOMPLETE=true; shift ;;
     -h|--help)  usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
@@ -110,12 +115,63 @@ done
 die() { echo "run-audit: $*" >&2; exit 2; }
 
 # ---------------------------------------------------------------------------
+# Target directories
+# ---------------------------------------------------------------------------
+# Results are organised by WHAT was audited, not when. One directory per
+# target, overwritten by a re-audit — the newest result is the only one that
+# matters, and git holds the history.
+#
+#   audits/gcp-org/            the organization pass
+#   audits/<project-id>/       one per project
+#
+# A directory is self-contained: its report, its results file, the run log and
+# the settings that produced it.
+
+report_in() {  # $1 target directory — the automated results file inside it
+  if [[ -f "$1/report/02-organization/01-automated-results.md" ]]; then
+    echo "$1/report/02-organization/01-automated-results.md"
+  else
+    local f; f=$(ls "$1"/report/03-projects/*.md 2>/dev/null | head -1 || true)
+    echo "$f"
+  fi
+}
+
+state_in() {  # $1 target directory — the results JSON inside it
+  ls "$1"/evidence/results/*.json 2>/dev/null | head -1 || true
+}
+
+completion_of() {  # $1 report file — the completion percentage, or empty
+  [[ -f "$1" ]] || return 0
+  grep -m1 -oE 'completion [0-9]+%' "$1" 2>/dev/null | grep -oE '[0-9]+' || true
+}
+
+outstanding_in() {  # $1 report file — "22 REVIEW, 2 ERROR" or empty
+  [[ -f "$1" ]] || return 0
+  awk -F'|' '/^\| (REVIEW|SKIP|ERROR|DENIED) \|/ {
+      gsub(/ /,"",$2); gsub(/ /,"",$3); if ($3+0 > 0) printf "%s%s %s", sep, $3, $2; sep=", " }' "$1"
+}
+
+# Every target directory under $OUT, organization first.
+targets_under() {  # $1 root
+  [[ -d "$1" ]] || return 0
+  [[ -d "$1/gcp-org" ]] && echo "$1/gcp-org"
+  for d in "$1"/*/; do
+    d="${d%/}"
+    [[ "$(basename "$d")" == "gcp-org" ]] && continue
+    [[ -d "$d/evidence/results" || -d "$d/report" ]] || continue
+    echo "$d"
+  done
+}
+
+# ---------------------------------------------------------------------------
+# --incomplete: what is below 100%, and therefore in no report
+# ---------------------------------------------------------------------------
 # --interview and --compile: everything after the runs are done.
 # ---------------------------------------------------------------------------
 # Neither touches GCP. The interview asks the auditor; the compile reads what
 # is already on disk. Both work on the whole engagement rather than one run,
 # so they take no run directory.
-STATE=$(dirname "$OUT")          # audit-state/, beside the runs
+STATE="$OUT"                     # reports sit beside the target directories
 ANSWERS="$STATE/manual-answers.json"
 HERE=$(cd "$(dirname "$0")" && pwd)
 
@@ -127,7 +183,7 @@ fi
 
 if $DO_COMPILE; then
   cd "$HERE"
-  [[ -d "$OUT" ]] || die "no runs found in $OUT — audit something first"
+  [[ -d "$OUT" ]] || die "no results found in $OUT — audit something first"
 
   # The estate list is the denominator for coverage. Without it the reports
   # still build, but a percentage of an unknown total is not a percentage, so
@@ -176,57 +232,88 @@ if $DO_COMPILE; then
   echo "  $STATE/compliance-score.json  the same, for the dashboard"
   echo "  $STATE/safeguards.md          which of the 56 pass, and what blocks the rest"
   echo "  $STATE/safeguards.json        the same, for the dashboard"
+  # Excluded targets are in no report. Say how many, and how to see them.
+  part=0
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    [[ "$(completion_of "$(report_in "$d")")" == 100 ]] || part=$((part + 1))
+  done < <(targets_under "$OUT")
+  if [[ "$part" -gt 0 ]]; then
+    echo
+    echo "  $part target(s) below 100% and excluded — ./run-audit.sh --incomplete"
+  fi
   exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# --review: decide the REVIEW checks of a finished run. Nothing is re-run.
-# ---------------------------------------------------------------------------
-# rollup.go recognises packs by their content, so it reads report/ directly.
-rebuild_plan() {  # $1 run directory (absolute)
-  local run="$1"
-  go run rollup.go -in "$run/report" -out "$run/report/01-remediation-plan.md" \
-    -csv "$run/report/remediation-plan.csv" \
-    -score-md "$run/report/04-compliance-score.md" \
-    -score-json "$run/report/04-compliance-score.json"
-}
-
-report_for() {  # $1 run directory, $2 pass name — the report file a pass is filed as
-  if [[ "$2" == "organization" ]]; then echo "$1/report/02-organization/01-automated-results.md"
-  else echo "$1/report/03-projects/$2.md"; fi
-}
-
-if [[ -n "$REVIEW_DIR" ]]; then
-  [[ -d "$REVIEW_DIR/evidence/results" ]] || die "no saved results in $REVIEW_DIR/evidence/results — --review needs a run made by this version of run-audit.sh"
-  RUN=$(cd "$REVIEW_DIR" && pwd)
+if $DO_INCOMPLETE; then
   cd "$(dirname "$0")"
-  STATES=()
-  [[ -f "$RUN/evidence/results/organization.json" ]] && STATES+=("$RUN/evidence/results/organization.json")
-  for f in "$RUN"/evidence/results/*.json; do
-    [[ "$(basename "$f")" == "organization.json" ]] || STATES+=("$f")
-  done
+  [[ -d "$OUT" ]] || die "no results in $OUT — audit something first"
+  total=0; partial=0; rows=""
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    total=$((total + 1))
+    rep=$(report_in "$d"); pct=$(completion_of "$rep")
+    [[ "$pct" == 100 ]] && continue
+    partial=$((partial + 1))
+    rows+=$(printf '%-30s %-11s %-24s %s\n' \
+      "$(basename "$d")" "${pct:-?}%" "$(outstanding_in "$rep")" \
+      "./run-audit.sh --review $(basename "$d")")$'\n'
+  done < <(targets_under "$OUT")
+
+  if [[ "$partial" == 0 ]]; then
+    echo "All $total target(s) at 100%. Nothing excluded from the reports."
+    exit 0
+  fi
+  echo "$partial of $total target(s) below 100% — excluded from all reports"
+  echo
+  printf '%-30s %-11s %-24s %s\n' TARGET COMPLETION OUTSTANDING 'REVIEW WITH'
+  printf '%s' "$rows"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# --review: decide what the machine could not. Nothing is re-run.
+# ---------------------------------------------------------------------------
+if $DO_REVIEW; then
+  cd "$(dirname "$0")"
+  DIRS=()
+  if [[ -n "$REVIEW_TARGET" ]]; then
+    # A target name, or a directory path — a run directory from an older
+    # layout still works, so existing results stay reviewable.
+    if [[ -d "$REVIEW_TARGET/evidence/results" ]]; then DIRS=("$REVIEW_TARGET")
+    elif [[ -d "$OUT/$REVIEW_TARGET/evidence/results" ]]; then DIRS=("$OUT/$REVIEW_TARGET")
+    else die "no results for '$REVIEW_TARGET' — try ./run-audit.sh --incomplete"; fi
+  else
+    while IFS= read -r d; do
+      [[ -n "$d" ]] || continue
+      rep=$(report_in "$d")
+      [[ "$(completion_of "$rep")" == 100 ]] || DIRS+=("$d")
+    done < <(targets_under "$OUT")
+    [[ ${#DIRS[@]} -gt 0 ]] || { echo "Nothing outstanding — every target is at 100%."; exit 0; }
+  fi
+
   STOPPED=false
-  for state in "${STATES[@]}"; do
-    name=$(basename "$state" .json)
+  for d in "${DIRS[@]}"; do
+    state=$(state_in "$d"); rep=$(report_in "$d")
+    [[ -n "$state" && -n "$rep" ]] || { echo "skipping $(basename "$d") — no results file"; continue; }
     rm -f "$state.quit"
-    go run audit-run.go -decide "$state" -md "$(report_for "$RUN" "$name")" \
-      || die "review of $name failed"
-    # audit-run leaves this marker when the auditor quits (q): stop the
-    # session here rather than moving on to the next pass.
+    go run audit-run.go -decide "$state" -md "$rep" || die "review of $(basename "$d") failed"
+    # audit-run leaves this marker when the auditor quits (q): stop here
+    # rather than moving on to the next target.
     if [[ -f "$state.quit" ]]; then rm -f "$state.quit"; STOPPED=true; break; fi
   done
-  echo
-  echo "=== Remediation plan"
-  rebuild_plan "$RUN"
+
   echo
   echo "================================================================"
-  echo "CIS IG1 audit review  $(basename "$RUN")"
-  for state in "${STATES[@]}"; do
-    name=$(basename "$state" .json)
-    printf '  %-32s %s\n' "$name" "$(grep -m1 -o 'SCORE: [^*]*' "$(report_for "$RUN" "$name")" || echo 'SCORE: unknown')"
+  for d in "${DIRS[@]}"; do
+    rep=$(report_in "$d")
+    printf '  %-30s %s\n' "$(basename "$d")" \
+      "$(grep -m1 -o 'SCORE: [^*]*' "$rep" 2>/dev/null || echo 'SCORE: unknown')"
   done
-  if $STOPPED; then echo "  stopped — run --review again to carry on"; fi
+  $STOPPED && echo "  stopped — run --review again to carry on"
   echo "================================================================"
+  echo "Then: ./run-audit.sh --compile"
   exit 0
 fi
 # One settings file, in one place. Clearing an output directory must never
@@ -259,14 +346,18 @@ mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 cd "$(dirname "$0")"
 
-RUN_ID=$(date +%Y-%m-%d_%H-%M-%S)
-RUN="$OUT/$RUN_ID"
-REPORT="$RUN/report"
-EVIDENCE="$RUN/evidence"
-PACKS="$RUN/.packs"            # audit-run's raw pack layout; filed into report/ at the end
-mkdir -p "$REPORT/02-organization" "$REPORT/03-projects" "$EVIDENCE" "$PACKS"
+# Everything a run produces is staged here, then filed into one directory per
+# target. Staging keeps a half-finished run out of the results tree, and lets
+# the per-run evidence — the log, the settings, the target list — be copied
+# into every target directory so each one stands alone.
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+EVIDENCE="$STAGE/evidence"
+PACKS="$STAGE/.packs"
+RUN="$STAGE"
+mkdir -p "$EVIDENCE" "$PACKS"
 
-# Everything from here is shown on screen and kept in evidence/run.log.
+# Everything from here is shown on screen and kept in each target's run.log.
 exec > >(tee "$EVIDENCE/run.log") 2>&1
 
 cp "$CONFIG" "$EVIDENCE/audit.env"
@@ -305,13 +396,13 @@ EXCLUDED_COUNT=$(grep -c . "$EVIDENCE/excluded.txt" || true)
 TARGET_COUNT=$(grep -c . "$EVIDENCE/targets.txt" || true)
 
 IMPERSONATING=$(gcloud config get-value auth/impersonate_service_account 2>/dev/null || true)
-echo "CIS IG1 audit  run $RUN_ID"
+echo "CIS IG1 audit"
 echo "  organization  $ORG"
 echo "  identity      ${IMPERSONATING:-$(gcloud config get-value account 2>/dev/null) (NOT impersonating)}"
 echo "  projects      $TARGET_COUNT audited, $EXCLUDED_COUNT excluded (EXCLUDE_PROJECTS $EXCLUDE)"
 [[ -n "$SKIP" ]] && echo "  skipping      $SKIP"
 echo "  parallel      $PARALLEL"
-echo "  output        $RUN/"
+echo "  output        $OUT/<target>/"
 echo
 
 # ---------------------------------------------------------------------------
@@ -371,56 +462,73 @@ if [[ $TARGET_COUNT -gt 0 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Rollup and score
+# File each pass into its own target directory
 # ---------------------------------------------------------------------------
-echo "=== Remediation plan"
-go run rollup.go -in "$PACKS" -out "$REPORT/01-remediation-plan.md" -csv "$REPORT/remediation-plan.csv" \
-  -score-md "$REPORT/04-compliance-score.md" -score-json "$REPORT/04-compliance-score.json"
+# A re-audit replaces the directory: the newest result is the only one that
+# counts, and git holds what came before. Aggregate reports are built by
+# --compile across every target, not per run.
 
-# ---------------------------------------------------------------------------
-# File the packs into report/ and evidence/
-# ---------------------------------------------------------------------------
+file_evidence() {  # $1 target directory
+  mkdir -p "$1/evidence"
+  cp "$EVIDENCE/run.log"      "$1/evidence/run.log"      2>/dev/null || true
+  cp "$EVIDENCE/audit.env"    "$1/evidence/audit.env"    2>/dev/null || true
+  cp "$EVIDENCE/targets.txt"  "$1/evidence/targets.txt"  2>/dev/null || true
+  [[ -s "$EVIDENCE/excluded.txt" ]] && cp "$EVIDENCE/excluded.txt" "$1/evidence/excluded.txt"
+  return 0
+}
+
+FILED=()
 if [[ -d "$PACKS/org" ]]; then
-  mv "$PACKS/org/01-automated-results.md" "$REPORT/02-organization/01-automated-results.md"
-  [[ -f "$PACKS/org/02-manual-cli.md" ]]     && mv "$PACKS/org/02-manual-cli.md"     "$REPORT/02-organization/02-manual-gcp-tasks.md"
-  [[ -f "$PACKS/org/03-manual-process.md" ]] && mv "$PACKS/org/03-manual-process.md" "$REPORT/02-organization/03-manual-process.md"
-  [[ -f "$PACKS/org/iam-inventory.txt" ]]    && mv "$PACKS/org/iam-inventory.txt"    "$EVIDENCE/iam-inventory.txt"
-  if [[ -f "$PACKS/org/results.json" ]]; then
-    mkdir -p "$EVIDENCE/results"; mv "$PACKS/org/results.json" "$EVIDENCE/results/organization.json"
-  fi
+  d="$OUT/gcp-org"
+  rm -rf "$d"
+  mkdir -p "$d/report/02-organization" "$d/evidence/results"
+  mv "$PACKS/org/01-automated-results.md" "$d/report/02-organization/01-automated-results.md"
+  [[ -f "$PACKS/org/02-manual-cli.md" ]]     && mv "$PACKS/org/02-manual-cli.md"     "$d/report/02-organization/02-manual-gcp-tasks.md"
+  [[ -f "$PACKS/org/03-manual-process.md" ]] && mv "$PACKS/org/03-manual-process.md" "$d/report/02-organization/03-manual-process.md"
+  [[ -f "$PACKS/org/iam-inventory.txt" ]]    && mv "$PACKS/org/iam-inventory.txt"    "$d/evidence/iam-inventory.txt"
+  [[ -f "$PACKS/org/results.json" ]]         && mv "$PACKS/org/results.json"         "$d/evidence/results/organization.json"
+  file_evidence "$d"
+  FILED+=("gcp-org")
 fi
 if [[ -d "$PACKS/projects" ]]; then
-  for d in "$PACKS"/projects/*/; do
-    p=$(basename "$d")
-    [[ -f "$d/01-automated-results.md" ]] && mv "$d/01-automated-results.md" "$REPORT/03-projects/$p.md"
-    if [[ -f "$d/results.json" ]]; then
-      mkdir -p "$EVIDENCE/results"; mv "$d/results.json" "$EVIDENCE/results/$p.json"
-    fi
+  for s in "$PACKS"/projects/*/; do
+    p=$(basename "$s")
+    d="$OUT/$p"
+    rm -rf "$d"
+    mkdir -p "$d/report/03-projects" "$d/evidence/results"
+    [[ -f "$s/01-automated-results.md" ]] && mv "$s/01-automated-results.md" "$d/report/03-projects/$p.md"
+    [[ -f "$s/results.json" ]]            && mv "$s/results.json"            "$d/evidence/results/$p.json"
+    file_evidence "$d"
+    FILED+=("$p")
   done
 fi
 rm -rf "$PACKS"
-rmdir "$REPORT/02-organization" "$REPORT/03-projects" 2>/dev/null || true
-[[ -s "$EVIDENCE/excluded.txt" ]] || rm -f "$EVIDENCE/excluded.txt"
 if [[ ${#NOT_FOUND[@]} -gt 0 ]]; then
-  printf '%s\n' "${NOT_FOUND[@]}" > "$EVIDENCE/not-found.txt"
+  for d in "${FILED[@]}"; do printf '%s\n' "${NOT_FOUND[@]}" > "$OUT/$d/evidence/not-found.txt"; done
 fi
 
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-FINDINGS=$(grep -c '^| [0-9]' "$REPORT/01-remediation-plan.md" || true)
 echo "================================================================"
-echo "CIS IG1 audit  run $RUN_ID"
+echo "CIS IG1 audit"
 [[ ${#STATUS_LINES[@]} -gt 0 ]] && printf '%s\n' "${STATUS_LINES[@]}"
-echo "  remediation plan  $FINDINGS distinct finding(s)"
 [[ $EXCLUDED_COUNT -gt 0 ]] && echo "  excluded          $EXCLUDED_COUNT project(s) matching $EXCLUDE — see evidence/excluded.txt"
 [[ -n "$SKIP" ]] && echo "  checks skipped    $SKIP (reported as SKIP)"
 [[ ${#NOT_FOUND[@]} -gt 0 ]] && echo "  not found         ${NOT_FOUND[*]}"
 echo
-echo "Read:  $REPORT/"
-if grep -q 'REVIEW\*\* await the auditor' "$REPORT"/02-organization/01-automated-results.md "$REPORT"/03-projects/*.md 2>/dev/null; then
-  echo "Next:  ./run-audit.sh --review $RUN"
-  echo "       Completion stays below 100% until every REVIEW check is decided PASS or FAIL."
+for d in "${FILED[@]}"; do echo "  $OUT/$d/"; done
+echo
+PARTIAL=()
+for d in "${FILED[@]}"; do
+  [[ "$(completion_of "$(report_in "$OUT/$d")")" == 100 ]] || PARTIAL+=("$d")
+done
+if [[ ${#PARTIAL[@]} -gt 0 ]]; then
+  echo "Next:  ./run-audit.sh --review ${PARTIAL[0]}"
+  echo "       ${#PARTIAL[@]} target(s) below 100%: ${PARTIAL[*]}"
+  echo "       A target below 100% appears in no report. ./run-audit.sh --incomplete"
+else
+  echo "Next:  ./run-audit.sh --compile"
 fi
 echo "================================================================"
 
