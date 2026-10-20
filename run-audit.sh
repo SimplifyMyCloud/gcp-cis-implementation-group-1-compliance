@@ -71,8 +71,10 @@ Options
                      114 questions, saved as you go, resumable.
   --incomplete       List every target below 100%, what is outstanding, and the
                      command to clear it. Those targets appear in no report.
-  --compile          Build every report from every run: the remediation plan,
-                     the compliance score and the safeguard status.
+  --compile          Build every report into reports/: the remediation plan,
+                     the compliance score and the safeguard status. Counts the
+                     targets present in audits/; for coverage against a wider
+                     estate pass -projects to the Go tools by hand.
   --config FILE      Settings file (default: config/audit.env)
   --org ID           Organization ID (default: ORG_ID from the settings file, or $ORG_ID)
   --out DIR          Where results are written (default: ./audits)
@@ -193,15 +195,12 @@ if $DO_COMPILE; then
   cd "$HERE"
   [[ -d "$OUT" ]] || die "no results found in $OUT — audit something first"
 
-  # The estate list is the denominator for coverage. Without it the reports
-  # still build, but a percentage of an unknown total is not a percentage, so
-  # say so rather than quietly dividing by what happens to be present.
+  # config/projects.txt selects what to AUDIT. The reports count what WAS
+  # audited: the target directories present. Auto-passing the list as a
+  # coverage denominator divided 16 audited projects by a stale 3-line file
+  # and reported 533% — so it is not passed. For coverage against a wider
+  # estate, call rollup.go or compliance-report.go with -projects by hand.
   proj=()
-  if [[ -f "$HERE/config/projects.txt" ]]; then
-    proj=(-projects "$HERE/config/projects.txt")
-  else
-    echo "note: no config/projects.txt — coverage will be of the projects audited, not the estate"
-  fi
   ans=()
   if [[ -f "$ANSWERS" ]]; then
     ans=(-answers "$ANSWERS")

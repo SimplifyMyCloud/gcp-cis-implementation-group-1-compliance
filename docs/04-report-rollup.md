@@ -58,8 +58,8 @@ PROJECTS, BY SAFEGUARD: x% compliant on average
 | Number | Denominator | Includes manual |
 |---|---|---|
 | SAFEGUARDS | 56 IG1 safeguards | Yes |
-| PROJECTS audited | `config/projects.txt` — passes at 100% | — |
-| PROJECTS passing | `config/projects.txt` — at 100% with zero FAIL | — |
+| PROJECTS audited | Targets present in `audits/` at 100% | — |
+| PROJECTS passing | Targets present in `audits/` at 100% with zero FAIL | — |
 | ORGANIZATION | 27 safeguards the org pass judges. **Absent if the org pass is below 100%** | No |
 | PROJECTS BY SAFEGUARD | 35 safeguards a project pass judges, averaged over finished audits | No |
 
@@ -89,9 +89,19 @@ Dev projects only → fix in flight. Production named → live exposure. Both �
 
 ---
 
+## Coverage against a wider estate
+
+`--compile` counts the targets in `audits/`, so the project percentage is of what you have audited. To report against the whole estate instead — "16 of 44" — pass the list by hand:
+
+```bash
+go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/projects.txt -safeguards-md reports/safeguards.md -safeguards-json reports/safeguards.json
+```
+
+Keep that list complete. A stale one divides audited projects by the wrong total and reports percentages above 100%.
+
 ## Production-only figures
 
-Second denominator, same runs:
+Third denominator, same audits:
 
 ```bash
 go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/production.txt -safeguards-md reports/safeguards-production.md -safeguards-json reports/safeguards-production.json

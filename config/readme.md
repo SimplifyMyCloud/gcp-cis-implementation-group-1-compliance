@@ -33,14 +33,16 @@ Both filled-in files are committed: one shared settings file is what makes sever
 
 ## projects.txt
 
-One ID per line, `#` comments ignored. Two uses:
+One ID per line, `#` comments ignored. It selects what to audit:
 
 ```bash
-./run-audit.sh --no-org --projects config/projects.txt    # audit them
-./run-audit.sh --compile                                  # coverage denominator
+./run-audit.sh --no-org --projects config/projects.txt
 ```
 
-It is the **estate**, not the backlog. Keep it complete while working through it.
+`--compile` does **not** read it. The reports count the targets present in
+`audits/`, so a stale list cannot skew a percentage. To report coverage against
+the whole estate, pass it to the Go tools by hand — see
+[Phase 3](../docs/04-report-rollup.md).
 
 ## none is an answer
 
