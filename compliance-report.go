@@ -828,24 +828,31 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 			id string
 			v  verdict3
 		}
+
+		// A cross-reference has no command of its own: audit-run resolves it
+		// from the checks it points at, every time it loads the file. So the
+		// verdict SAVED against one is stale, and reading it directly reports
+		// a decided pass as unfinished. Resolve the ordinary checks first,
+		// then give each cross-reference the worst verdict among its
+		// referents — the same rule audit-run applies.
+		base := map[string]verdict3{}
+		for _, r := range run.Results {
+			if len(r.Refs) > 0 {
+				continue
+			}
+			base[r.ID] = verdictOf(r.Verdict, run.Decisions[r.ID].Verdict)
+		}
+
 		final, total := 0, 0
 		for _, r := range run.Results {
-			label := r.Verdict
-			// An auditor's decision stands in for whatever the machine reached,
-			// exactly as the report renders it.
-			if d, ok := run.Decisions[r.ID]; ok && d.Verdict != "" {
-				label = d.Verdict
-			}
-			var v verdict3
-			switch strings.ToUpper(label) {
-			case "PASS", "N/A", "NA":
+			v, isRef := base[r.ID], len(r.Refs) > 0
+			if isRef {
 				v = vcPass
-			case "FAIL":
-				v = vcFail
-			case "XREF":
-				continue
-			default: // REVIEW, SKIP, ERROR, DENIED
-				v = vcOpen
+				for _, ref := range r.Refs {
+					if rv, ok := base[ref]; ok {
+						v = worse(v, rv)
+					}
+				}
 			}
 			if v == vcFail {
 				st.passing = false
@@ -857,8 +864,8 @@ func loadRuns(root string) (map[string]verdict3, map[string]map[string]verdict3,
 			if v != vcOpen {
 				final++
 			}
-			if len(r.Refs) > 0 {
-				continue // a cross-reference: its referents already count
+			if isRef {
+				continue // counted above; its referents carry the verdict
 			}
 			seen = append(seen, struct {
 				id string
@@ -1477,4 +1484,20 @@ func betterRun(aComplete bool, aStamp string, bComplete bool, bStamp string) boo
 		return aComplete
 	}
 	return aStamp > bStamp
+}
+
+// verdictOf reads a saved verdict, with the auditor's decision taking
+// precedence exactly as the report renders it.
+func verdictOf(saved, decided string) verdict3 {
+	label := saved
+	if decided != "" {
+		label = decided
+	}
+	switch strings.ToUpper(label) {
+	case "PASS", "N/A", "NA":
+		return vcPass
+	case "FAIL":
+		return vcFail
+	}
+	return vcOpen // REVIEW, SKIP, ERROR, DENIED
 }
