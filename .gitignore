@@ -43,8 +43,8 @@ $RECYCLE.BIN/
 # ---------------------------------------------------------------------------
 # Scratch
 # ---------------------------------------------------------------------------
-# Nothing the audit produces goes here — runs are written to audit-state/runs/
-# and are committed. This is for whatever you keep beside the work.
+# Nothing the audit produces goes here — evidence is written to audits/ and
+# compiled reports to reports/. This is for whatever you keep beside the work.
 /scratch/
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ $RECYCLE.BIN/
 /audit-run
 
 # ---------------------------------------------------------------------------
-# Build artefacts — anchored to the root, so nothing inside audit-state/ can
+# Build artefacts — anchored to the root, so nothing inside audits/ can
 # match them by accident.
 # ---------------------------------------------------------------------------
 /audit-run.log
@@ -97,10 +97,14 @@ service-account*.json
 # ---------------------------------------------------------------------------
 # Results and settings ARE committed
 # ---------------------------------------------------------------------------
-# This repository assumes it is private. audit-state/ is the deliverable, and
-# config/audit.env and config/projects.txt are committed with it so that every
-# auditor on the engagement scores against identical criteria rather than
-# retyping the policy answers. Neither holds a credential.
+# This repository assumes it is private. audits/ is the evidence and reports/
+# is the deliverable; both are committed. config/audit.env and
+# config/projects.txt are committed with them so that every auditor on the
+# engagement scores against identical criteria rather than retyping the policy
+# answers. Neither holds a credential.
+#
+# The public copy of this kit is the exception: it ships the code and the docs
+# and none of the results. See config/readme.md.
 #
 # What that means in practice: repository access is access to the findings.
 # Results name every public bucket, every over-permissioned account and every

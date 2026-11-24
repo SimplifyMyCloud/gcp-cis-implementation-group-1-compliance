@@ -16,14 +16,14 @@
 // Packs are found by their CONTENT, not their file name, so a run directory
 // works as-is:
 //
-//	go run rollup.go -in audit-state/runs/2026-09-21_09-47-01  # one run
-//	go run rollup.go -in audit-state/runs                      # the whole org
+//	go run rollup.go -in audits/gcp-projects/acme-prod-api    # one run
+//	go run rollup.go -in audits                               # the whole org
 //
 // Sweeping several runs, the newest COMPLETE pass wins for each target: a
 // pass still holding REVIEW checks, or checks blocked by SKIP/ERROR/DENIED,
 // is not finished and does not count towards any total.
 //
-//	go run rollup.go -in audit-state/runs -out plan.md -csv plan.csv \
+//	go run rollup.go -in audits -out plan.md -csv plan.csv \
 //	  -score-md score.md -score-json score.json
 package main
 
@@ -397,7 +397,7 @@ func writePlan(path string, fs []finding, packs []packInfo, usable, excluded int
 	b.WriteString("\n")
 
 	// Links resolve relative to wherever the plan is written (the runbook puts
-	// it in audit-state/), not to docs/. Run from the repository root.
+	// it in audits/), not to docs/. Run from the repository root.
 	docs := "docs"
 	absOut, err1 := filepath.Abs(filepath.Dir(path))
 	absDocs, err2 := filepath.Abs("docs")

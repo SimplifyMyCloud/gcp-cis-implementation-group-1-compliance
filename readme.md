@@ -13,6 +13,18 @@ Audits a Google Cloud organization against **CIS Controls v8.1 Implementation Gr
 ./run-audit.sh --compile               # two report feeds: org and projects
 ```
 
+Run it bare and it prints the options rather than auditing anything.
+
+## Start here
+
+| | |
+|---|---|
+| **Auditing an estate** | [docs/01-setup.md](docs/01-setup.md), then the three phases below. Allow an hour for access |
+| **Pitching or scoping one** | [delivery/](delivery/readme.md) — one-pagers and decks for a customer CISO and for fellow architects |
+| **Changing the kit** | [docs/readme.md](docs/readme.md). Two of those documents are parsed at runtime; do not restructure them |
+
+You need Cloud Shell or any machine with `gcloud` and Go, and a read-only service account you can impersonate. Nothing else — no modules, no build, no license.
+
 ## How it works
 
 The 188 checks are not stored in code. `audit-run.go` parses them out of [`docs/cis-ig1-cli-validation.md`](docs/cis-ig1-cli-validation.md) at runtime — the document is the single source, so there is no second copy to drift. Each check carries its command, its pass criterion and the requirement it answers.
@@ -56,7 +68,9 @@ Standard library only. No `go.mod`, no dependencies, no build step — `go run <
 | [`docs/cis-ig1-remediation-reference.md`](docs/cis-ig1-remediation-reference.md) | Example Terraform per finding |
 | [`docs/cis-ig1-required-apis.md`](docs/cis-ig1-required-apis.md) | The 17 APIs the quota project needs |
 | [`docs/known-issues.md`](docs/known-issues.md) | Defects found in the field, with workarounds |
+| [`docs/readme.md`](docs/readme.md) | What every document is for, and which two the parsers read |
 | [`config/`](config/readme.md) | Every setting, and nothing else |
+| [`delivery/`](delivery/readme.md) | One-pagers and decks for pitching and handing over an engagement |
 
 ## CIS
 

@@ -602,12 +602,16 @@ func writeLines(path string, lines []string) error {
 // at all — training, end-user devices, removable media — and are answered the
 // same way, so the denominator can honestly be 56 rather than 44.
 //
-//	go run compliance-report.go -interview audit-state/manual-answers.json
-//	go run compliance-report.go -runs audit-state/runs \
-//	  -answers audit-state/manual-answers.json \
-//	  -safeguards-md audit-state/safeguards.md \
-//	  -safeguards-json audit-state/safeguards.json \
+//	go run compliance-report.go -interview audits/manual-answers.json
+//	go run compliance-report.go -runs audits/gcp-projects \
+//	  -answers audits/manual-answers.json \
+//	  -safeguards-md reports/gcp-projects/safeguards.md \
+//	  -safeguards-json reports/gcp-projects/safeguards.json \
 //	  -projects config/projects.txt
+//
+// run-audit.sh --compile does this twice, once per feed: audits/gcp-org into
+// reports/gcp-org, audits/gcp-projects into reports/gcp-projects. The
+// interview answers are an organization-level fact and go to the org feed.
 
 type verdict3 int
 

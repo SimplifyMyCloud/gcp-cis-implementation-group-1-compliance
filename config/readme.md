@@ -49,3 +49,22 @@ the whole estate, pass it to the Go tools by hand — see
 A resource that does not exist cannot meet a requirement. `none` makes the dependent checks FAIL — a result. Blank makes them SKIP, which holds the pass below 100%.
 
 Never put a credential here. The audit runs by impersonation precisely so no key exists.
+
+## Two clones, two rules
+
+The same kit is used in two places, and what gets committed differs:
+
+| | Tracked | Not tracked |
+|---|---|---|
+| **The public kit** | Code, docs, `*.example` | `audits/`, `reports/`, `audit.env`, `projects.txt` |
+| **A customer's private repo** | All of it, results included | — |
+
+`.gitignore` is shipped and so cannot carry that difference. The public clone keeps it in `.git/info/exclude`, which is per-clone and never pushed:
+
+```bash
+printf '/audits/\n/reports/\n/config/audit.env\n/config/projects.txt\n' >> .git/info/exclude
+```
+
+Do that once in any clone that must not publish results. In the customer's private repo, leave it out — there, `audits/` is the evidence and `reports/` is the deliverable, and both belong in history.
+
+Results name every public bucket, every over-permissioned account and every open firewall rule in the estate. History outlives the repository setting, so a clone that ever pushed them cannot be made clean again by changing a flag.

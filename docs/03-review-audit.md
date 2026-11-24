@@ -22,13 +22,13 @@ A pass reaches 100% completion only when `--review` leaves nothing undecided. **
 
 TARGET                         COMPLETION  OUTSTANDING   REVIEW WITH
 gcp-org                        74%         22 REVIEW     ./run-audit.sh --review gcp-org
-nyc3-prod-api                  54%         47 REVIEW     ./run-audit.sh --review nyc3-prod-api
+acme-prod-api                  54%         47 REVIEW     ./run-audit.sh --review acme-prod-api
 ```
 
 ## 2. Review a target
 
 ```bash
-./run-audit.sh --review nyc3-prod-api
+./run-audit.sh --review acme-prod-api
 ```
 
 ```bash
