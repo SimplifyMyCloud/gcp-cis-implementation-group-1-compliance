@@ -36,11 +36,11 @@ Both filled-in files are committed: one shared settings file is what makes sever
 One ID per line, `#` comments ignored. It selects what to audit:
 
 ```bash
-./run-audit.sh --no-org --projects config/projects.txt
+./run-audit.sh --projects config/projects.txt
 ```
 
 `--compile` does **not** read it. The reports count the targets present in
-`audits/`, so a stale list cannot skew a percentage. To report coverage against
+`audits/gcp-projects/`, so a stale list cannot skew a percentage. To report coverage against
 the whole estate, pass it to the Go tools by hand — see
 [Phase 3](../docs/04-report-rollup.md).
 

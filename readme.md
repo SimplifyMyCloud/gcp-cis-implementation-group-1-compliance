@@ -5,12 +5,12 @@ Audits a Google Cloud organization against **CIS Controls v8.1 Implementation Gr
 188 of those requirements have a `gcloud` command that answers them. The kit runs all 188 read-only as an impersonated service account holding no keys, puts the ones a machine cannot judge to the auditor, takes the 102 that no command can answer as an interview, and compiles the result into a score per safeguard, per project and per organization.
 
 ```bash
-./run-audit.sh                         # organization pass, 86 checks
-./run-audit.sh --no-org --project ID   # project pass, 103 checks
+./run-audit.sh --gcp-org               # organization pass, 86 checks
+./run-audit.sh --project ID            # project pass, 103 checks
 ./run-audit.sh --incomplete            # what is below 100%, and in no report
 ./run-audit.sh --review TARGET         # decide what the machine could not
 ./run-audit.sh --interview             # the 114 a command cannot answer
-./run-audit.sh --compile               # every report, across every target
+./run-audit.sh --compile               # two report feeds: org and projects
 ```
 
 ## How it works
@@ -21,7 +21,7 @@ A check ends in one of seven verdicts. PASS, FAIL and N/A are final. REVIEW mean
 
 A pass is complete when nothing is undecided. **A target below 100% appears in no report** — not its score, not its findings. An unfinished audit is work outstanding, not a result, and `--incomplete` is how you find it.
 
-Results are filed by what was audited, not when: `audits/gcp-org/` and `audits/<project-id>/`, one directory each, replaced by a re-audit. Compiled reports land in `reports/` — `audits/` is the evidence, `reports/` is what you hand over.
+Results are filed by what was audited, not when: `audits/gcp-org/` and `audits/gcp-projects/<project-id>/`, one directory each, replaced by a re-audit. `--compile` builds a report set for each side into `reports/gcp-org/` and `reports/gcp-projects/` — two feeds a dashboard reads with one schema. `audits/` is the evidence, `reports/` is what you hand over.
 
 A safeguard passes when every requirement under it passes, including the manual ones. A requirement failing in any audited project fails the safeguard estate-wide.
 

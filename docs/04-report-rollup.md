@@ -30,7 +30,14 @@ Without the interview only 5 of 44 safeguards can be scored.
 
 ## Output
 
-Six files in `reports/`, beside `audits/`. The audits are the evidence; the reports are what you hand over.
+Two feeds, six files each, same filenames — one schema reads both:
+
+```
+reports/gcp-org/        remediation-plan.md  .csv  compliance-score.md  .json  safeguards.md  .json
+reports/gcp-projects/   the same six
+```
+
+`audits/` is the evidence; `reports/` is what you hand over.
 
 | File | Contents |
 |---|---|
@@ -48,12 +55,17 @@ Six files in `reports/`, beside `audits/`. The audits are the evidence; the repo
 Printed on completion:
 
 ```
-SCORE: completion x% · pass y% · fail z%
-SAFEGUARDS: x% — n of 56 passing
-PROJECTS: x% audited (n of 44) · y% passing (n of 44)
-ORGANIZATION: x% compliant
-PROJECTS, BY SAFEGUARD: x% compliant on average
+Organization
+  SCORE: completion x% · pass y% · fail z%
+  SAFEGUARDS: x% — n of 56 passing
+  ORGANIZATION: x% compliant
+Projects
+  SCORE: completion x% · pass y% · fail z%
+  PROJECTS: x% audited (n of m) · y% passing (n of m)
+  PROJECTS, BY SAFEGUARD: x% compliant on average
 ```
+
+**The interview answers count towards the organization feed only.** They are organization-wide facts — a documented process, a recertified inventory — so `SAFEGUARDS: n of 56` belongs there. The projects feed reports what commands can check.
 
 | Number | Denominator | Includes manual |
 |---|---|---|
@@ -70,11 +82,11 @@ Each target is scored against the safeguards **its own pass judges**. A project 
 ## Reading the safeguard report
 
 ```bash
-sed -n '/## By target/,/^Mean/p' reports/safeguards.md
+sed -n '/## By target/,/^Mean/p' reports/gcp-projects/safeguards.md
 ```
 
 ```bash
-sed -n '/## What is blocking/,$p' reports/safeguards.md
+sed -n '/## What is blocking/,$p' reports/gcp-projects/safeguards.md
 ```
 
 Blocking entries name the projects:
@@ -94,7 +106,7 @@ Dev projects only → fix in flight. Production named → live exposure. Both �
 `--compile` counts the targets in `audits/`, so the project percentage is of what you have audited. To report against the whole estate instead — "16 of 44" — pass the list by hand:
 
 ```bash
-go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/projects.txt -safeguards-md reports/safeguards.md -safeguards-json reports/safeguards.json
+go run compliance-report.go -runs audits/gcp-projects -projects config/projects.txt -safeguards-md reports/gcp-projects/safeguards.md -safeguards-json reports/gcp-projects/safeguards.json
 ```
 
 Keep that list complete. A stale one divides audited projects by the wrong total and reports percentages above 100%.
@@ -104,7 +116,7 @@ Keep that list complete. A stale one divides audited projects by the wrong total
 Third denominator, same audits:
 
 ```bash
-go run compliance-report.go -runs audits -answers audits/manual-answers.json -projects config/production.txt -safeguards-md reports/safeguards-production.md -safeguards-json reports/safeguards-production.json
+go run compliance-report.go -runs audits/gcp-projects -projects config/production.txt -safeguards-md reports/gcp-projects/safeguards-production.md -safeguards-json reports/gcp-projects/safeguards-production.json
 ```
 
 ---

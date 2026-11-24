@@ -24,11 +24,11 @@
 # audits/ is the evidence, reports/ is what you hand over. A target below
 # 100% completion appears in no report; --incomplete lists those.
 #
-#   ./run-audit.sh                                # organization only
-#   ./run-audit.sh --project my-proj              # org + one project (repeatable)
-#   ./run-audit.sh --no-org --project my-proj     # that project alone
-#   ./run-audit.sh --projects config/projects.txt # org + a list, one ID per line
-#   ./run-audit.sh --all                          # org + every ACTIVE project
+#   ./run-audit.sh --gcp-org                      # the organization
+#   ./run-audit.sh --project my-proj              # one project (repeatable)
+#   ./run-audit.sh --projects config/projects.txt # a list, one ID per line
+#   ./run-audit.sh --all                          # every ACTIVE project
+#   ./run-audit.sh                                # no arguments: prints the options
 #
 # Settings come from config/audit.env — the organization, the service account
 # and the check inputs. Copy config/audit.env.example to start one.
@@ -48,7 +48,8 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: ./run-audit.sh [--project ID ...|--projects FILE|--all] [options]
+Usage: ./run-audit.sh --gcp-org [options]
+       ./run-audit.sh --project ID ... | --projects FILE | --all  [options]
        ./run-audit.sh --review [TARGET]
        ./run-audit.sh --incomplete
        ./run-audit.sh --interview
@@ -59,8 +60,9 @@ AUDIT_PROJECT, SA_EMAIL, APPROVED_REGISTRIES, ALLOWED_LOCATIONS,
 EXCLUDE_PROJECTS. Start one by copying config/audit.env.example, or write a
 fresh template with: go run audit-run.go -init-config config/audit.env
 
-Projects (default: organization pass only)
-  --project ID       Audit this project. Repeatable.
+What to audit — at least one is required
+  --gcp-org          Audit the organization. 86 checks at the org node.
+  --project ID       Audit this project, 103 checks. Repeatable.
   --projects FILE    Audit every project ID in FILE, one per line; # comments allowed.
   --all              Audit every ACTIVE project in the organization.
 
@@ -71,14 +73,17 @@ Options
                      114 questions, saved as you go, resumable.
   --incomplete       List every target below 100%, what is outstanding, and the
                      command to clear it. Those targets appear in no report.
-  --compile          Build every report into reports/: the remediation plan,
-                     the compliance score and the safeguard status. Counts the
-                     targets present in audits/; for coverage against a wider
-                     estate pass -projects to the Go tools by hand.
+  --compile          Build two report feeds: reports/gcp-org/ and
+                     reports/gcp-projects/, six files each with the same
+                     filenames. Counts the targets present in audits/; for
+                     coverage against a wider estate pass -projects to the Go
+                     tools by hand.
   --config FILE      Settings file (default: config/audit.env)
-  --org ID           Organization ID (default: ORG_ID from the settings file, or $ORG_ID)
+  --org-id ID        Organization ID (default: ORG_ID from the settings file)
   --out DIR          Where results are written (default: ./audits)
-  --no-org           Skip the organization pass (project passes only)
+                     Organization results go to <out>/gcp-org/, projects to
+                     <out>/gcp-projects/<project-id>/. Reports are built into
+                     reports/gcp-org/ and reports/gcp-projects/.
   -h, --help         This message
 
 Review
@@ -93,8 +98,9 @@ audit everything). They are listed in evidence/excluded.txt.
 USAGE
 }
 
-CONFIG="" ORG="${ORG_ID:-}" OUT="./audits" PROJECTS_FILE="" ALL=false DO_ORG=true SKIP="" PARALLEL=8
+CONFIG="" ORG="${ORG_ID:-}" OUT="./audits" PROJECTS_FILE="" ALL=false SKIP="" PARALLEL=8
 DO_REVIEW=false REVIEW_TARGET="" DO_COMPILE=false DO_INTERVIEW=false DO_INCOMPLETE=false
+DO_ORG=false
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -102,9 +108,9 @@ while [[ $# -gt 0 ]]; do
     --project)  PROJECTS+=("$2"); shift 2 ;;
     --projects) PROJECTS_FILE="$2"; shift 2 ;;
     --all)      ALL=true; shift ;;
-    --org)      ORG="$2"; shift 2 ;;
+    --gcp-org)  DO_ORG=true; shift ;;
+    --org-id|--org) ORG="$2"; shift 2 ;;
     --out)      OUT="$2"; shift 2 ;;
-    --no-org)   DO_ORG=false; shift ;;
     --skip)     SKIP="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
     --review)   DO_REVIEW=true
@@ -119,6 +125,13 @@ done
 
 die() { echo "run-audit: $*" >&2; exit 2; }
 
+# No arguments at all: show what is available rather than choose for them.
+if ! $DO_ORG && ! $DO_COMPILE && ! $DO_INTERVIEW && ! $DO_INCOMPLETE && ! $DO_REVIEW \
+   && ! $ALL && [[ ${#PROJECTS[@]} -eq 0 && -z "$PROJECTS_FILE" ]]; then
+  usage
+  exit 0
+fi
+
 # ---------------------------------------------------------------------------
 # Target directories
 # ---------------------------------------------------------------------------
@@ -126,11 +139,17 @@ die() { echo "run-audit: $*" >&2; exit 2; }
 # target, overwritten by a re-audit — the newest result is the only one that
 # matters, and git holds the history.
 #
-#   audits/gcp-org/            the organization pass
-#   audits/<project-id>/       one per project
+#   audits/gcp-org/                     the organization pass
+#   audits/gcp-projects/<project-id>/   one per project
 #
 # A directory is self-contained: its report, its results file, the run log and
 # the settings that produced it.
+#
+# The two are separated so each produces its own report set — two feeds a
+# dashboard can read with one schema:
+#
+#   reports/gcp-org/        remediation-plan  compliance-score  safeguards
+#   reports/gcp-projects/   the same six filenames
 
 report_in() {  # $1 target directory — the automated results file inside it
   if [[ -f "$1/report/02-organization/01-automated-results.md" ]]; then
@@ -156,16 +175,31 @@ outstanding_in() {  # $1 report file — "22 REVIEW, 2 ERROR" or empty
       gsub(/ /,"",$2); gsub(/ /,"",$3); if ($3+0 > 0) printf "%s%s %s", sep, $3, $2; sep=", " }' "$1"
 }
 
-# Every target directory under $OUT, organization first.
+ORG_DIR="gcp-org"
+PROJ_DIR="gcp-projects"
+
+# Every target directory under $OUT, organization first. Project directories
+# live one level down, under gcp-projects/; a directory left over from the
+# flat layout is still found, so older results stay usable.
 targets_under() {  # $1 root
   [[ -d "$1" ]] || return 0
-  [[ -d "$1/gcp-org" ]] && echo "$1/gcp-org"
-  for d in "$1"/*/; do
+  [[ -d "$1/$ORG_DIR" ]] && echo "$1/$ORG_DIR"
+  local d
+  for d in "$1/$PROJ_DIR"/*/ "$1"/*/; do
     d="${d%/}"
-    [[ "$(basename "$d")" == "gcp-org" ]] && continue
+    [[ -d "$d" ]] || continue
+    case "$(basename "$d")" in "$ORG_DIR"|"$PROJ_DIR"|archive) continue ;; esac
     [[ -d "$d/evidence/results" || -d "$d/report" ]] || continue
     echo "$d"
   done
+}
+
+# Where a target named on the command line lives.
+target_path() {  # $1 root, $2 name
+  case "$2" in
+    "$ORG_DIR"|org|organization) echo "$1/$ORG_DIR" ;;
+    *) if [[ -d "$1/$PROJ_DIR/$2" ]]; then echo "$1/$PROJ_DIR/$2"; else echo "$1/$2"; fi ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -209,37 +243,47 @@ if $DO_COMPILE; then
     echo "      5 fully automated safeguards can be scored"
   fi
 
-  mkdir -p "$REPORTS"
-  echo
-  echo "=== Remediation plan and compliance score"
-  go run rollup.go -in "$OUT" \
-    -out        "$REPORTS/remediation-plan.md" \
-    -csv        "$REPORTS/remediation-plan.csv" \
-    -score-md   "$REPORTS/compliance-score.md" \
-    -score-json "$REPORTS/compliance-score.json" \
-    ${proj[@]+"${proj[@]}"}
+  # Two feeds, same six filenames, so one schema reads both. The interview
+  # answers go only to the organization feed: they are organization-wide
+  # facts — is there a documented process, is the inventory recertified —
+  # and attaching them to the project feed would report the same "of 56"
+  # number twice from different data.
+  feed() {  # $1 audits directory, $2 reports directory, $3 label, $4.. extra flags
+    local src="$1" dst="$2" label="$3"; shift 3
+    [[ -d "$src" ]] || { echo "  (no $label results in $src — skipped)"; return 0; }
+    mkdir -p "$dst"
+    echo
+    echo "=== $label"
+    go run rollup.go -in "$src" \
+      -out        "$dst/remediation-plan.md" \
+      -csv        "$dst/remediation-plan.csv" \
+      -score-md   "$dst/compliance-score.md" \
+      -score-json "$dst/compliance-score.json" \
+      ${proj[@]+"${proj[@]}"}
+    go run compliance-report.go -runs "$src" \
+      -safeguards-md   "$dst/safeguards.md" \
+      -safeguards-json "$dst/safeguards.json" \
+      "$@" ${proj[@]+"${proj[@]}"}
+  }
 
-  echo
-  echo "=== Safeguard status"
-  go run compliance-report.go -runs "$OUT" \
-    -safeguards-md   "$REPORTS/safeguards.md" \
-    -safeguards-json "$REPORTS/safeguards.json" \
-    ${ans[@]+"${ans[@]}"} ${proj[@]+"${proj[@]}"}
+  feed "$OUT/$ORG_DIR"  "$REPORTS/$ORG_DIR"  "Organization" ${ans[@]+"${ans[@]}"}
+  feed "$OUT/$PROJ_DIR" "$REPORTS/$PROJ_DIR" "Projects"
 
   echo
   echo "================================================================"
-  grep -m1 -o 'SCORE: [^*]*' "$REPORTS/compliance-score.md" 2>/dev/null || true
-  grep -m1 -o 'SAFEGUARDS: [^*]*' "$REPORTS/safeguards.md"  2>/dev/null || true
-  grep -m1 -o 'PROJECTS: [^*]*'   "$REPORTS/safeguards.md"  2>/dev/null || true
-  grep -m1 -o 'ORGANIZATION: [^*]*' "$REPORTS/safeguards.md" 2>/dev/null || true
-  grep -m1 -o 'PROJECTS, BY SAFEGUARD: [^*]*' "$REPORTS/safeguards.md" 2>/dev/null || true
+  # Each feed prints the numbers that mean something for it. Both files keep
+  # every field, so the two JSON documents stay one schema for the dashboard.
+  show() {  # $1 reports dir, $2 label, $3 egrep pattern of lines to print
+    [[ -f "$1/safeguards.md" ]] || return 0
+    echo "$2"
+    grep -m1 -o 'SCORE: [^*]*' "$1/compliance-score.md" 2>/dev/null | sed 's/^/  /' || true
+    grep -hoE "$3" "$1/safeguards.md" 2>/dev/null | sed 's/^/  /' || true
+  }
+  show "$REPORTS/$ORG_DIR"  Organization 'SAFEGUARDS: [^*]*|ORGANIZATION: [^*]*'
+  show "$REPORTS/$PROJ_DIR" Projects     'PROJECTS: [^*]*|PROJECTS, BY SAFEGUARD: [^*]*'
   echo "================================================================"
-  echo "  $REPORTS/remediation-plan.md    the work list, pivoted by finding"
-  echo "  $REPORTS/remediation-plan.csv   the same, for the tracker"
-  echo "  $REPORTS/compliance-score.md    coverage and the three numbers"
-  echo "  $REPORTS/compliance-score.json  the same, for the dashboard"
-  echo "  $REPORTS/safeguards.md          which of the 56 pass, and what blocks the rest"
-  echo "  $REPORTS/safeguards.json        the same, for the dashboard"
+  echo "  $REPORTS/$ORG_DIR/       six files — the organization feed"
+  echo "  $REPORTS/$PROJ_DIR/      six files — the projects feed"
   # Excluded targets are in no report. Say how many, and how to see them.
   part=0
   while IFS= read -r d; do
@@ -289,8 +333,9 @@ if $DO_REVIEW; then
   if [[ -n "$REVIEW_TARGET" ]]; then
     # A target name, or a directory path — a run directory from an older
     # layout still works, so existing results stay reviewable.
+    cand=$(target_path "$OUT" "$REVIEW_TARGET")
     if [[ -d "$REVIEW_TARGET/evidence/results" ]]; then DIRS=("$REVIEW_TARGET")
-    elif [[ -d "$OUT/$REVIEW_TARGET/evidence/results" ]]; then DIRS=("$OUT/$REVIEW_TARGET")
+    elif [[ -d "$cand/evidence/results" ]]; then DIRS=("$cand")
     else die "no results for '$REVIEW_TARGET' — try ./run-audit.sh --incomplete"; fi
   else
     while IFS= read -r d; do
@@ -487,7 +532,7 @@ file_evidence() {  # $1 target directory
 
 FILED=()
 if [[ -d "$PACKS/org" ]]; then
-  d="$OUT/gcp-org"
+  d="$OUT/$ORG_DIR"
   rm -rf "$d"
   mkdir -p "$d/report/02-organization" "$d/evidence/results"
   mv "$PACKS/org/01-automated-results.md" "$d/report/02-organization/01-automated-results.md"
@@ -496,18 +541,18 @@ if [[ -d "$PACKS/org" ]]; then
   [[ -f "$PACKS/org/iam-inventory.txt" ]]    && mv "$PACKS/org/iam-inventory.txt"    "$d/evidence/iam-inventory.txt"
   [[ -f "$PACKS/org/results.json" ]]         && mv "$PACKS/org/results.json"         "$d/evidence/results/organization.json"
   file_evidence "$d"
-  FILED+=("gcp-org")
+  FILED+=("$ORG_DIR")
 fi
 if [[ -d "$PACKS/projects" ]]; then
   for s in "$PACKS"/projects/*/; do
     p=$(basename "$s")
-    d="$OUT/$p"
+    d="$OUT/$PROJ_DIR/$p"
     rm -rf "$d"
     mkdir -p "$d/report/03-projects" "$d/evidence/results"
     [[ -f "$s/01-automated-results.md" ]] && mv "$s/01-automated-results.md" "$d/report/03-projects/$p.md"
     [[ -f "$s/results.json" ]]            && mv "$s/results.json"            "$d/evidence/results/$p.json"
     file_evidence "$d"
-    FILED+=("$p")
+    FILED+=("$PROJ_DIR/$p")
   done
 fi
 rm -rf "$PACKS"
@@ -532,8 +577,8 @@ for d in "${FILED[@]}"; do
   [[ "$(completion_of "$(report_in "$OUT/$d")")" == 100 ]] || PARTIAL+=("$d")
 done
 if [[ ${#PARTIAL[@]} -gt 0 ]]; then
-  echo "Next:  ./run-audit.sh --review ${PARTIAL[0]}"
-  echo "       ${#PARTIAL[@]} target(s) below 100%: ${PARTIAL[*]}"
+  echo "Next:  ./run-audit.sh --review $(basename "${PARTIAL[0]}")"
+  echo "       ${#PARTIAL[@]} target(s) below 100%: ${PARTIAL[*]//$PROJ_DIR\//}"
   echo "       A target below 100% appears in no report. ./run-audit.sh --incomplete"
 else
   echo "Next:  ./run-audit.sh --compile"

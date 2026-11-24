@@ -20,10 +20,10 @@ V112 appears in both. Each report lists all 188 in order; the other pass's check
 ## 1. Organization pass
 
 ```bash
-./run-audit.sh
+./run-audit.sh --gcp-org
 ```
 
-No arguments. Output lands in `audits/gcp-org/`.
+Output lands in `audits/gcp-org/`. **With no arguments the script prints its options and exits** — it audits nothing by accident.
 
 Abort conditions, printed in the header:
 
@@ -50,22 +50,22 @@ The `Next:` line names the review command.
 One project:
 
 ```bash
-./run-audit.sh --no-org --project PROJECT_ID
+./run-audit.sh --project PROJECT_ID
 ```
 
 All projects in the estate list:
 
 ```bash
-./run-audit.sh --no-org --projects config/projects.txt
+./run-audit.sh --projects config/projects.txt
 ```
 
 A batch:
 
 ```bash
-split -l 9 config/projects.txt config/batch- && ./run-audit.sh --no-org --projects config/batch-aa
+split -l 9 config/projects.txt config/batch- && ./run-audit.sh --projects config/batch-aa
 ```
 
-**`--no-org` is mandatory after the organization pass.** Without it you get a second org pass and a second set of REVIEW decisions for questions already answered, with nothing to say which is authoritative.
+Nothing runs unless you name it: `--gcp-org`, `--project`, `--projects` or `--all`. There is no default, so a project run cannot drag in a second organization pass.
 
 ---
 
@@ -86,7 +86,7 @@ Start the run inside tmux — survives an SSH drop, not a session end. Keep the 
 ## 4. Commit
 
 ```bash
-git pull && git add audits/<target> && git commit -m "API audit: <target>" && git push
+git pull && git add audits && git commit -m "API audit: <target>" && git push
 ```
 
 Name the path. Never `git add -A`.
@@ -105,13 +105,13 @@ audits/
     report/02-organization/03-manual-process.md
     evidence/results/organization.json          read by Phase 2
     evidence/run.log  audit.env  targets.txt  iam-inventory.txt
-  <project-id>/
+  gcp-projects/<project-id>/
     report/03-projects/<project-id>.md
     evidence/results/<project-id>.json          read by Phase 2
     evidence/run.log  audit.env  targets.txt
 ```
 
-Aggregate reports are built across every target by `--compile` in [Phase 3](04-report-rollup.md), and land in `reports/` beside `audits/`.
+`--compile` builds a report set per side — `reports/gcp-org/` and `reports/gcp-projects/` — see [Phase 3](04-report-rollup.md).
 
 Every pass finishes below 100% completion. REVIEW checks are undecided by design — that is [Phase 2](03-review-audit.md). **A target below 100% appears in no report.**
 
@@ -121,10 +121,10 @@ Every pass finishes below 100% completion. REVIEW checks are undecided by design
 
 | Flag | Use |
 |---|---|
-| `--no-org` | Skip the organization pass |
+| `--gcp-org` | The organization pass, 86 checks |
 | `--project ID` | One project. Repeatable |
 | `--projects FILE` | One ID per line |
 | `--all` | Every ACTIVE project in the org |
 | `--skip V96` | Omit a check that hangs. Reported as SKIP |
 | `--parallel N` | Checks at once. Default 8 |
-| `--out DIR` | Default `./audits` |
+| `--out DIR` | Default `./audits`. Org goes to `<out>/gcp-org/`, projects to `<out>/gcp-projects/<id>/` |
