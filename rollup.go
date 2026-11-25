@@ -120,7 +120,7 @@ var (
 
 func main() {
 	var (
-		in        = flag.String("in", "./audit-state", "directory holding the packs — a run directory, or one holding many")
+		in        = flag.String("in", "./audits", "directory holding the packs — one target's directory, or one holding many")
 		out       = flag.String("out", "remediation-plan.md", "markdown plan")
 		csvOut    = flag.String("csv", "remediation-plan.csv", "CSV for the tracker")
 		minProj   = flag.Int("min", 1, "only report findings affecting at least N projects")
